@@ -31,8 +31,8 @@ export class EngineSynth {
     const cut = 230 + r * 520 + this.load * 160 + this.spd * 120;                                             // never opens past ~1 kHz
     this.lp1.frequency.setTargetAtTime(cut, t, .12); this.lp2.frequency.setTargetAtTime(cut * 1.6, t, .12);
     const shift = this.dip > 0 ? .78 : 1;                                                                     // soft dip on upshift instead of a thump
-    this.g.gain.setTargetAtTime((.05 + this.spd * .035 + r * .02 + this.load * .03) * shift, t, .1);
-    this.air.gain.setTargetAtTime(this.load * (.004 + this.spd * .008), t, .15); this.airF.frequency.setTargetAtTime(340 + this.spd * 380, t, .2);
+    this.g.gain.setTargetAtTime((.018 + this.spd * .016 + r * .01 + this.load * .014) * shift, t, .1);
+    this.air.gain.setTargetAtTime(this.load * (.0015 + this.spd * .003), t, .15); this.airF.frequency.setTargetAtTime(340 + this.spd * 380, t, .2);
   }
   stop() { if (this.dead) return; this.dead = true; for (const o of this.o) { try { o.stop(); } catch { /* ok */ } } try { this.src.stop(); } catch { /* ok */ } this.g.disconnect(); this.air.disconnect(); }
 }

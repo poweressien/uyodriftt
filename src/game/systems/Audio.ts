@@ -15,7 +15,7 @@ export function getBus(): Bus {
 }
 export function applyAudioSettings() {
   if (!bus) return; const s = getSave().settings, t = bus.ctx.currentTime;
-  bus.sfx.gain.setTargetAtTime(s.sfx * 1.05, t, .04); bus.engine.gain.setTargetAtTime(s.engine * 1.2, t, .06); bus.music.gain.setTargetAtTime(s.music * .85, t, .08);
+  bus.sfx.gain.setTargetAtTime(s.sfx * 1.05, t, .04); bus.engine.gain.setTargetAtTime(s.engine * .7, t, .06); bus.music.gain.setTargetAtTime(s.music * .85, t, .08);
 }
 subscribe(applyAudioSettings);
 /** Call from a tap/key. Browsers keep audio suspended until the player interacts. */
@@ -94,7 +94,7 @@ export class GameAudio {
   constructor(weather: string, private hornId: string) {
     const b = this.b, c = b.ctx; this.out = c.createGain(); this.out.connect(b.sfx); this.carOut = c.createGain(); this.carOut.connect(b.engine); unlockAudio();
     this.eng = new EngineSynth(c, this.carOut, b.noise);
-    this.screech = this.loop('bandpass', 1150, 0, 1.6, this.carOut, 3200); this.wind = this.loop('bandpass', 520, 0, .5, this.carOut, 1800);
+    this.screech = this.loop('bandpass', 850, 0, .7, this.carOut, 1500); this.wind = this.loop('bandpass', 420, 0, .4, this.carOut, 900);
     this.loop('highpass', 1200, weather === 'heavy_rain' ? .16 : weather === 'rain' ? .08 : 0, .7); this.loop('lowpass', 260, .035, .7); this.loop('bandpass', 900, weather === 'night' ? .006 : .012, .5);
     this.timer = window.setInterval(() => { if (!this.dead) this.beep([Math.random() < .5 ? 420 : 520], .3, .012, 'triangle'); }, 14000 + Math.random() * 10000); // distant horn in the traffic
   }
@@ -110,7 +110,7 @@ export class GameAudio {
     if (this.dead) return; const c = this.b.ctx, t = c.currentTime, dt = Math.min(.1, Math.max(.001, t - this.last || .016)); this.last = t; const r = Math.min(1, ratio);
     let rpm = prpm ?? .22 + r * .7, gear = pgear ?? Math.min(6, 1 + Math.floor(r * 5));
     this.eng.update({ rpm, load, speed: r, gear }, dt, t);
-    this.screech.gain.setTargetAtTime(slip > .35 ? Math.min(.07, (slip - .35) * .1) : 0, t, .12); this.wind.gain.setTargetAtTime(r * r * .03, t, .2);
+    this.screech.gain.setTargetAtTime(slip > .35 ? Math.min(.016, (slip - .35) * .03) : 0, t, .12); this.wind.gain.setTargetAtTime(r * r * .01, t, .25);
   }
   horn() { const h = HORNS[this.hornId] ?? HORNS.classic; this.beep(h.f, h.dur, .15, h.type); }
   /** severity 0..1 */
@@ -143,7 +143,7 @@ let muteBackup: { music: number; engine: number; radio: number; sfx: number } | 
 export function toggleMuteAll() {
   const s = getSave().settings;
   if (s.music + s.engine + s.radio + s.sfx > 0) { muteBackup = { music: s.music, engine: s.engine, radio: s.radio, sfx: s.sfx }; setSettings({ music: 0, engine: 0, radio: 0, sfx: 0 }); }
-  else setSettings(muteBackup ?? { music: .6, engine: .5, radio: .8, sfx: .8 });
+  else setSettings(muteBackup ?? { music: .6, engine: .35, radio: .8, sfx: .8 });
 }
 
 /** Menu sounds (sfx channel): taps, back, purchase, reward, error. Silent until the first user gesture unlocks audio. */

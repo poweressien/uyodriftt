@@ -90,3 +90,44 @@ label.aud-cap{margin-top:8px}
 .rotate{display:none}
 @media (orientation:portrait) and (pointer:coarse){.rotate{display:block;position:fixed;left:50%;top:max(10px,env(safe-area-inset-top));transform:translateX(-50%);z-index:45;padding:8px 16px;border-radius:999px;background:rgba(0,0,0,.7);border:1px solid var(--o);font:700 15px 'Barlow Condensed',sans-serif;letter-spacing:.08em;text-transform:uppercase;pointer-events:none;white-space:nowrap}}
 .aud-name{text-align:left}
+
+/* ---- v4.1 home screen: roundabout scene, number-plate logo, chunky flat buttons ---- */
+.hm{position:fixed;inset:0;overflow:hidden;background:#2c7a3d;color:#111;animation:in .5s ease}
+.hm-scene{position:absolute;inset:0;width:100%;height:100%;display:block}
+.hm-top{position:absolute;left:0;right:0;top:0;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:max(16px,env(safe-area-inset-top)) clamp(16px,3vw,40px) 0;pointer-events:none;z-index:3}.hm-top>*{pointer-events:auto}
+.hm-plate{position:relative;background:#fff;border:4px solid #111;border-radius:12px;box-shadow:5px 5px 0 rgba(0,0,0,.45);padding:0 18px 6px;text-align:center;overflow:hidden;min-width:250px}
+.hm-plate .band{margin:0 -18px;background:#0f8a45;color:#fff;font:700 12px 'Barlow Condensed',sans-serif;letter-spacing:.22em;padding:3px 0;border-bottom:3px solid #111}
+.hm-plate .name{font:400 clamp(40px,5.2vw,64px)/1.05 Anton,Impact,sans-serif;letter-spacing:.07em;color:#111;padding-top:2px}
+.hm-plate .rv{position:absolute;top:30px;width:9px;height:9px;border-radius:50%;background:#9aa0a6;border:1px solid #555}.hm-plate .rv.l{left:6px}.hm-plate .rv.r{right:6px}
+.hm-me{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.hm-chip{display:flex;align-items:center;gap:8px;background:#fff6dc;border:3px solid #111;border-radius:12px;box-shadow:3px 3px 0 rgba(0,0,0,.45);padding:4px 12px;font:700 17px 'Barlow Condensed',sans-serif;letter-spacing:.06em;text-transform:uppercase}
+.hm-chip>b{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:#0f8a45;color:#fff;font:400 16px Anton,sans-serif}
+.hm-chip span{display:flex;flex-direction:column;gap:3px;line-height:1}.hm-chip em{display:block;height:5px;width:100%;background:rgba(0,0,0,.18);border-radius:3px;overflow:hidden}.hm-chip em i{display:block;height:100%;background:#ff8c1a}
+.hm-chip.coins{font-size:22px}
+.hm-chal{position:absolute;z-index:4;top:calc(max(16px,env(safe-area-inset-top)) + 96px);right:clamp(16px,3vw,40px);display:flex;gap:8px;align-items:center;background:#ffc400;border:3px solid #111;border-radius:12px;box-shadow:3px 3px 0 rgba(0,0,0,.45);padding:6px 10px;font:700 16px 'Barlow Condensed',sans-serif}
+.hm-chal button{font:inherit;border:2px solid #111;background:#fff;border-radius:8px;padding:2px 10px;cursor:pointer}
+.hm-nav{position:absolute;z-index:3;left:clamp(16px,3vw,40px);top:clamp(130px,22vh,200px);width:min(330px,42vw);display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.hm-btn{position:relative;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:0;text-align:left;cursor:pointer;color:#111;background:#fff6dc;border:3px solid #111;border-radius:12px;box-shadow:4px 4px 0 #111;padding:7px 12px;transition:transform .08s,box-shadow .08s,background .15s}
+.hm-btn span{font:400 20px/1.1 Anton,Impact,sans-serif;letter-spacing:.06em;text-transform:uppercase}.hm-btn small{font:600 12px 'Barlow Condensed',sans-serif;letter-spacing:.04em;opacity:.65;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.hm-btn:hover{transform:translate(-2px,-2px);box-shadow:6px 6px 0 #111;background:#fff}.hm-btn:active{transform:translate(3px,3px);box-shadow:1px 1px 0 #111}
+.hm-btn.play{grid-column:1/-1;background:#ffc400;padding:10px 14px;background-image:repeating-linear-gradient(90deg,#111 0 14px,transparent 14px 28px);background-size:100% 6px;background-repeat:no-repeat;background-position:0 100%;background-color:#ffc400}
+.hm-btn.play span{font-size:34px;letter-spacing:.1em}.hm-btn.play small{font-size:14px;opacity:.8}.hm-btn.play:hover{background-color:#ffd23f}
+.hm-btn.quit{grid-column:1/-1;background:#f7d6d0;flex-direction:row;align-items:center;justify-content:space-between}.hm-btn.quit span{font-size:17px}
+.hm-btn .badge{position:absolute;top:-9px;right:-9px;width:24px;height:24px;border-radius:50%;background:#e8452c;color:#fff;border:3px solid #111;font:700 14px/18px 'Barlow Condensed',sans-serif;text-align:center;text-decoration:none;animation:dotp 1.4s infinite}
+.hm-car{position:absolute;z-index:3;right:clamp(16px,3vw,40px);bottom:max(16px,env(safe-area-inset-bottom));display:flex;align-items:center;gap:8px;background:#fff6dc;border:3px solid #111;border-radius:12px;box-shadow:4px 4px 0 #111;padding:4px 8px}
+.hm-car span{display:flex;flex-direction:column;align-items:center;min-width:130px;font:400 20px/1.05 Anton,Impact,sans-serif;letter-spacing:.05em;text-transform:uppercase}.hm-car small{font:700 11px 'Barlow Condensed',sans-serif;letter-spacing:.2em;color:#0f8a45}
+.hm-car button{width:34px;height:34px;border-radius:50%;border:3px solid #111;background:#fff;font-size:22px;line-height:1;cursor:pointer;color:#111}.hm-car button:disabled{opacity:.35;cursor:default}.hm-car button:not(:disabled):hover{background:#ffc400}
+@media (max-height:640px) and (min-aspect-ratio:1/1){
+  .hm-plate .name{font-size:36px}.hm-plate .band{font-size:10px}.hm-plate{min-width:200px}
+  .hm-nav{top:104px;gap:5px;width:min(300px,44vw)}.hm-plate .name{font-size:32px}.hm-btn{padding:4px 10px}.hm-btn span{font-size:16px}.hm-btn small{display:none}.hm-btn.play span{font-size:24px}.hm-btn.play{padding:6px 12px}.hm-chal{top:84px}
+  .hm-car span{font-size:16px;min-width:110px}.hm-chip{padding:2px 10px;font-size:15px}.hm-chip.coins{font-size:18px}
+}
+@media (max-aspect-ratio:1/1){
+  .hm{background:linear-gradient(#5fb4e6 0,#ffe3b0 26%,#2c7a3d 26%)}.hm-scene{top:128px;height:52%;bottom:auto}
+  .hm-top{justify-content:center;flex-direction:column;align-items:center}.hm-me{justify-content:center}.hm-plate{min-width:230px}.hm-plate .name{font-size:44px}
+  .hm-nav{left:0;right:0;top:auto;width:auto;bottom:calc(max(12px,env(safe-area-inset-bottom)) + 62px);padding:0 14px;gap:8px}
+  .hm-btn small{display:none}.hm-btn span{font-size:18px}.hm-btn.play span{font-size:30px}
+  .hm-car{right:auto;left:50%;transform:translateX(-50%);bottom:max(10px,env(safe-area-inset-bottom))}.hm-car span{font-size:16px;min-width:0;white-space:nowrap;padding:0 6px}.hm-chip{padding:2px 10px;font-size:15px}.hm-plate .name{font-size:38px}
+  .hm-chal{top:auto;bottom:calc(max(12px,env(safe-area-inset-bottom)) + 330px);right:14px;left:14px;justify-content:space-between}
+}
+@media (max-aspect-ratio:1/1){.hm-plate .band{font-size:10px;letter-spacing:.14em}}

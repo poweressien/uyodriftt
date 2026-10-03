@@ -18,8 +18,8 @@ export interface Settings {
   name: string;        // shown to friends in multiplayer
   v?: number;
 }
-export const SETTINGS_VERSION = 3;
-export const DEFAULT_SETTINGS: Settings = { controls: 'arrows', view: 'behind', music: .6, engine: .5, radio: .8, sfx: .8, radioText: true, haptics: true, name: '', v: SETTINGS_VERSION };
+export const SETTINGS_VERSION = 4;
+export const DEFAULT_SETTINGS: Settings = { controls: 'arrows', view: 'behind', music: .6, engine: .35, radio: .8, sfx: .8, radioText: true, haptics: true, name: '', v: SETTINGS_VERSION };
 const num = (x: unknown, d: number) => (typeof x === 'number' && Number.isFinite(x) ? Math.max(0, Math.min(1, x)) : d);
 /** Reads any older save (v1/v2 had music/sfx booleans) into the current shape. */
 export function migrateSettings(raw: any): Settings {
@@ -29,7 +29,7 @@ export function migrateSettings(raw: any): Settings {
     controls: r.controls === 'tilt' ? 'tilt' : 'arrows',
     view: VIEWS.includes(r.view) && (r.v ?? 0) >= 2 ? r.view : 'behind',
     music: num(boolVol(r.music, d.music) ?? r.music, d.music),
-    engine: num(r.engine ?? boolVol(r.sfx, d.engine), d.engine),
+    engine: (r.v ?? 0) < 4 ? Math.min(d.engine, num(r.engine ?? boolVol(r.sfx, d.engine), d.engine)) : num(r.engine ?? boolVol(r.sfx, d.engine), d.engine), // v4: car sound re-tuned quieter, old saves reset to the new default
     radio: num(r.radio ?? boolVol(r.sfx, d.radio), d.radio),
     sfx: num(boolVol(r.sfx, d.sfx) ?? r.sfx, d.sfx),
     radioText: typeof r.radioText === 'boolean' ? r.radioText : true,
