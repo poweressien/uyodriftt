@@ -1,0 +1,92 @@
+/* ---- v4: screens, audio panel, pause, play setup, garage, multiplayer ---- */
+.gold{color:var(--o)}.sub{margin-top:10px;margin-bottom:4px;font-size:16px}
+.chips.left{justify-content:flex-start}
+.btn.danger{background:rgba(214,45,32,.25);border-color:rgba(255,110,90,.6)}.btn.danger:hover{background:rgba(214,45,32,.45)}
+select.btn,select.chip{appearance:none;-webkit-appearance:none;padding-right:14px}select option{color:#000}
+.txt{width:100%;font:500 16px/1.3 'Barlow',system-ui,sans-serif;color:#fff;background:rgba(0,0,0,.35);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:8px 0;user-select:text;-webkit-user-select:text;resize:vertical}
+.txt:focus{outline:2px solid var(--o);outline-offset:1px}
+.err{margin-top:8px;padding:8px 12px;border-radius:10px;background:rgba(214,45,32,.25);border:1px solid rgba(255,110,90,.6);font-size:15px}
+.code{font:12px/1.35 ui-monospace,Menlo,Consolas,monospace;word-break:break-all;max-height:84px;overflow:auto;background:rgba(0,0,0,.4);border:1px dashed var(--line);border-radius:10px;padding:8px 10px;margin:8px 0;user-select:text;-webkit-user-select:text}
+.steps{margin:8px 0;padding-left:20px;font-size:15px;line-height:1.45}
+.plr{padding:6px 0;border-top:1px solid rgba(255,255,255,.08)}.plr:first-of-type{border-top:0}.swatch{display:inline-block;width:14px;height:14px;border-radius:50%;margin-right:8px;vertical-align:-2px;border:1px solid rgba(255,255,255,.5)}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--o);box-shadow:0 0 10px var(--o);margin-left:10px;align-self:center;animation:dotp 1.4s infinite}@keyframes dotp{50%{transform:scale(1.4);opacity:.7}}
+.mp-banner{font:400 clamp(30px,8vw,52px)/1 Anton,Impact,sans-serif;letter-spacing:.06em;padding:10px 26px;border-radius:16px;background:rgba(255,140,26,.2);border:2px solid var(--o);text-align:center}
+.mp-banner small{display:block;font:600 16px 'Barlow Condensed',sans-serif;letter-spacing:.12em;opacity:.85;margin-top:4px}
+.mp-banner.win{background:rgba(47,208,106,.2);border-color:#2fd06a;color:#7dffae}.mp-banner.lose{background:rgba(214,45,32,.2);border-color:#ff6e5a;color:#ffb0a4}
+
+/* main menu list */
+.mm-nav{z-index:3;left:clamp(18px,3vw,44px);top:25%;display:flex;flex-direction:column;gap:1px;max-height:72%;overflow-y:auto;scrollbar-width:none;padding-right:20px}.mm-nav::-webkit-scrollbar{display:none}
+.mm-nav button{position:relative;display:flex;align-items:center;gap:12px;background:none;border:0;color:rgba(255,255,255,.66);font:700 clamp(17px,1.8vw,24px)/1.15 'Barlow Condensed',sans-serif;letter-spacing:.16em;text-transform:uppercase;text-align:left;cursor:pointer;padding:5px 0;transition:color .2s,transform .25s cubic-bezier(.2,.8,.2,1);animation:slideR .6s calc(.15s + var(--i)*.05s) both}
+.mm-nav button em{font-style:normal;font-size:.55em;color:var(--o);letter-spacing:.1em;font-weight:600;width:1.6em}
+.mm-nav button span{display:flex;flex-direction:column}.mm-nav button small{font:600 11px 'Barlow Condensed',sans-serif;letter-spacing:.12em;opacity:.55;text-transform:none}
+.mm-nav button.lead{color:#fff;font-size:clamp(24px,2.7vw,36px)}.mm-nav button.lead span{color:var(--o)}
+.mm-nav button.quit{opacity:.7}
+.mm-nav button:hover,.mm-nav button:focus-visible{color:#fff;transform:translateX(12px);outline:0}.mm-nav button.lead:hover span{color:var(--o2)}
+.mm-car{z-index:3;right:clamp(18px,3vw,44px);top:30%;width:min(270px,26vw);text-align:center;text-shadow:0 2px 14px rgba(0,0,0,.7)}
+.mm-car small{display:block;font:600 12px 'Barlow Condensed',sans-serif;letter-spacing:.34em;text-transform:uppercase;color:var(--o)}
+.mm-car h2{font-size:clamp(22px,2.4vw,32px);text-transform:uppercase;letter-spacing:.05em;line-height:1.05;margin:2px 0 10px}
+.mm-cycle{display:flex;gap:10px;justify-content:center}.mm-cycle button{width:42px;height:42px;border-radius:50%;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.3);color:#fff;font-size:26px;line-height:1;cursor:pointer;backdrop-filter:blur(6px)}.mm-cycle button:hover{background:rgba(255,140,26,.35);border-color:var(--o)}
+@keyframes slideR{from{opacity:0;transform:translateX(-24px)}}
+@media (max-height:600px) and (min-aspect-ratio:1/1){
+  .mm-nav{top:22%;display:grid;grid-template-columns:auto auto;column-gap:24px;max-height:76%}.mm-nav button{font-size:15px;padding:2px 0}.mm-nav button small{display:none}.mm-nav button.lead{font-size:20px}.mm-car{top:24%;width:170px}
+  .mn-hero{left:66%;width:min(60vw,560px);margin-left:calc(min(60vw,560px)/-2);top:12%;bottom:22%}
+}
+@media (max-aspect-ratio:1/1){
+  .mm-nav{left:0;right:0;top:auto;bottom:max(12px,env(safe-area-inset-bottom));display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 14px;max-height:44%}
+  .mm-nav button{background:rgba(5,44,26,.72);border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:16px;letter-spacing:.1em;backdrop-filter:blur(6px)}
+  .mm-nav button small,.mm-nav button em{display:none}.mm-nav button.lead{grid-column:1/-1;justify-content:center;background:linear-gradient(#ffa63d,#ff7a00);color:#1a0b00;font-size:26px}.mm-nav button.lead span{color:#1a0b00}.mm-nav button:hover{transform:none}
+  .mm-car{left:50%;right:auto;transform:translateX(-50%);width:min(88vw,360px);top:auto;bottom:calc(44% + 14px)}
+  .mn-hero{top:20%;bottom:50%}
+}
+
+/* audio panel */
+.aud{display:flex;flex-direction:column;gap:12px;width:100%}
+.aud-row{display:grid;grid-template-columns:minmax(110px,170px) 1fr 34px auto;align-items:center;gap:10px}
+.aud-name b{font:700 18px 'Barlow Condensed',sans-serif;letter-spacing:.06em;text-transform:uppercase;display:block}.aud-name small{display:block;opacity:.65;font-size:13px}
+.aud-val{font:700 16px 'Barlow Condensed',sans-serif;text-align:right;opacity:.85}
+.aud input[type=range]{-webkit-appearance:none;appearance:none;height:8px;border-radius:5px;background:linear-gradient(90deg,var(--o) var(--p,50%),rgba(255,255,255,.2) var(--p,50%));outline:0;margin:0;width:100%;touch-action:none}
+.aud input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:26px;height:26px;border-radius:50%;background:#fff;border:3px solid var(--o);box-shadow:0 2px 8px rgba(0,0,0,.4)}
+.aud input[type=range]::-moz-range-thumb{width:20px;height:20px;border-radius:50%;background:#fff;border:3px solid var(--o)}
+.aud-cap{display:flex;align-items:center;gap:8px;font-size:15px;cursor:pointer}.aud-cap input{width:20px;height:20px;accent-color:var(--o)}
+label.aud-cap{margin-top:8px}
+.chip.sm{font-size:14px;padding:4px 12px;min-width:52px}
+.aud.compact{gap:6px}.aud.compact .aud-row{grid-template-columns:96px 1fr 28px auto;gap:8px}.aud.compact .aud-name b{font-size:15px}
+
+/* pause */
+.pause{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;background:rgba(1,12,7,.72);backdrop-filter:blur(5px);padding:12px}
+.pause-card{width:min(480px,100%);max-height:100%;overflow:auto;display:flex;flex-direction:column;gap:10px;align-items:stretch;background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:16px;text-align:center}
+.pause-card h2{font-size:34px}.pause-row{display:flex;gap:8px}.pause-row .btn{flex:1;font-size:16px;padding:9px 8px}
+@media (max-height:480px){.pause-card{gap:6px;padding:10px}.pause-card h2{font-size:24px}.aud.compact .aud-row{grid-template-columns:90px 1fr 26px auto}}
+
+/* play setup */
+.wrap2,.cards,.step,.panel.row{width:min(1000px,100%)}
+.step{display:flex;align-items:center;gap:10px;font:700 20px 'Barlow Condensed',sans-serif;letter-spacing:.08em;text-transform:uppercase;margin-top:4px}
+.stepno{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:var(--o);color:#1a0b00;font:400 16px Anton,sans-serif}
+.cards{display:grid;gap:10px}.cards.two{grid-template-columns:1fr 1fr}.cards.three{grid-template-columns:repeat(3,1fr)}
+@media (max-width:760px){.cards.three{grid-template-columns:1fr 1fr}}@media (max-width:460px){.cards.two,.cards.three{grid-template-columns:1fr}}
+.card{text-align:left;color:#fff;font:inherit;padding:12px 14px;border-radius:16px;background:linear-gradient(160deg,rgba(15,138,69,.45),rgba(3,26,15,.9));border:2px solid transparent;cursor:pointer;transition:transform .15s}
+.card:hover:not(:disabled){transform:translateY(-2px)}.card.on{border-color:var(--o);box-shadow:0 0 0 3px rgba(255,140,26,.22)}.card.lock{opacity:.5;cursor:not-allowed}
+.card h3{font-size:22px;margin-bottom:2px}.card p{margin:0 0 8px;font-size:14px;opacity:.85;line-height:1.25}
+.lanes{display:flex;gap:4px;margin:6px 0}.lanes i{width:14px;height:26px;border-radius:3px;background:linear-gradient(#555,#333);border:1px solid rgba(255,255,255,.3)}
+.pips2{display:flex;gap:3px;margin:4px 0}.pips2 i{width:16px;height:6px;border-radius:3px;background:rgba(255,255,255,.2)}.pips2 i.on{background:var(--o)}
+.go-bar{position:sticky;bottom:0;width:min(1000px,100%);display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;margin-top:auto;border-radius:16px;background:rgba(3,26,15,.95);border:1px solid var(--line);backdrop-filter:blur(8px);z-index:5}
+.go-bar .btn.big{padding:10px 40px;font-size:30px;animation:none}
+@media (max-width:520px){.go-bar .btn.big{padding:10px 24px;font-size:26px}}
+
+/* garage */
+.up-row{padding:7px 0;border-top:1px solid rgba(255,255,255,.08)}.up-row:first-of-type{border-top:0}
+.up-name{display:flex;flex-direction:column;font-size:19px;min-width:110px}.up-name small{font:500 12px 'Barlow',sans-serif;text-transform:none;letter-spacing:0;opacity:.65}
+.up-row .pips{display:inline;font-size:13px;letter-spacing:2px}
+.garage .panel{min-width:0}.garage .showroom.compact{margin:6px 0}
+
+/* career daily */
+.daily{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-top:10px}
+.dday{display:flex;flex-direction:column;align-items:center;padding:6px 2px;border-radius:10px;background:rgba(255,255,255,.07);border:1px solid var(--line);font-family:'Barlow Condensed',sans-serif;text-align:center}
+.dday small{font-size:11px;opacity:.7;letter-spacing:.06em;text-transform:uppercase}.dday b{font-size:17px}
+.dday.got{background:rgba(47,208,106,.22);border-color:#2fd06a}.dday.next{border-color:var(--o);box-shadow:0 0 12px rgba(255,140,26,.5)}.dday.big b{color:var(--o)}
+@media (max-width:420px){.dday b{font-size:14px}}
+
+/* turn-the-phone hint (portrait touch only) */
+.rotate{display:none}
+@media (orientation:portrait) and (pointer:coarse){.rotate{display:block;position:fixed;left:50%;top:max(10px,env(safe-area-inset-top));transform:translateX(-50%);z-index:45;padding:8px 16px;border-radius:999px;background:rgba(0,0,0,.7);border:1px solid var(--o);font:700 15px 'Barlow Condensed',sans-serif;letter-spacing:.08em;text-transform:uppercase;pointer-events:none;white-space:nowrap}}
+.aud-name{text-align:left}

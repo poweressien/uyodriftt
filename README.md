@@ -39,3 +39,13 @@ Touch: auto-throttle. Arrows or Tilt steering, BRAKE, DRIFT (handbrake), CAM. Pr
 - `src/game/data/`                  districts, layouts, vehicles, ranks/achievements/missions
 - `src/state/store.ts`              save data + all progression rules
 - `src/ui/`                         menus (React)
+
+## v4 changes
+- Separate screens: Menu, Play, Garage, Career, Multiplayer, Missions, Achievements, Leaderboard, Ranks, Settings, Quit.
+- Settings: independent volumes for car sound, IBOM radio, music and other sounds; steering, camera, name, reset.
+- Road types (Roundabout, Highway, City, Market, Estate, Circuit; Endless: Expressway, Dual, Village).
+- Smooth procedural engine (`systems/Engine.ts`); ~470 IBOM radio lines.
+- Touch: all camera views turn with the car, shaped steering, multi-touch buttons.
+- Nigerian roadside buildings (bungalow, face-me-I-face-you, duplex, kiosk, church, plaza, filling station) replace flags/billboards.
+- Economy: coins on the road, 11 cars, upgrades, sell car, daily streak, 13 career events, many achievements.
+- Multiplayer: challenge links, serverless WebRTC live race (swap two codes; no global lobby).

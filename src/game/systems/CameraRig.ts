@@ -15,17 +15,19 @@ export interface ViewRect { x: number; y: number; right: number; bottom: number 
 /** Owns the main camera: smooth zoom, optional rotation with the car, look-ahead. Replaces startFollow. */
 export class CameraRig {
   view: View = 'top'; private rot = 0; private zoom = 1.3; private lx = 0; private ly = 0; private cx = 0; private cy = 0;
-  constructor(private cam: Phaser.Cameras.Scene2D.Camera, private o: { zoomMul?: number; lookMul?: number } = {}) {
+  constructor(private cam: Phaser.Cameras.Scene2D.Camera, private o: { zoomMul?: number; lookMul?: number; headingUp?: boolean } = {}) {
     cam.disableCull = true; // Phaser's cull test is not rotation-safe; our object counts are small
   }
   setView(v: View) { this.view = v; }
+  /** On touch screens a north-up camera makes the arrows/tilt feel reversed whenever the car points down the screen, so every view turns with the car. */
+  private preset(): Preset { const p = PRESETS[this.view]; if (!this.o.headingUp || p.rotate) return p; return { ...p, rotate: true, shift: this.view === 'wide' ? 90 : 105, look: 0 }; }
   next(): View { this.view = VIEWS[(VIEWS.indexOf(this.view) + 1) % VIEWS.length]; return this.view; }
   label() { return VIEW_LABEL[this.view]; }
   snap(x: number, y: number, heading: number) {
-    const p = PRESETS[this.view]; this.rot = p.rotate ? -Math.PI / 2 - heading : 0; this.zoom = p.zoom * (this.o.zoomMul ?? 1); this.lx = this.ly = 0; this.apply(x, y);
+    const p = this.preset(); this.rot = p.rotate ? -Math.PI / 2 - heading : 0; this.zoom = p.zoom * (this.o.zoomMul ?? 1); this.lx = this.ly = 0; this.apply(x, y);
   }
   update(dt: number, x: number, y: number, heading: number, vx: number, vy: number, speedRatio: number) {
-    const p = PRESETS[this.view], k = (r: number) => Math.min(1, dt * r), la = Math.min(1, speedRatio);
+    const p = this.preset(), k = (r: number) => Math.min(1, dt * r), la = Math.min(1, speedRatio);
     this.rot += Phaser.Math.Angle.Wrap((p.rotate ? -Math.PI / 2 - heading : 0) - this.rot) * k(3.4);
     this.zoom += ((p.zoom - p.drop * la * p.zoom) * (this.o.zoomMul ?? 1) - this.zoom) * k(2.2);
     if (p.rotate) { // push the car towards the bottom of the screen so the road ahead is visible

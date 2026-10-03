@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { getSave, setSettings } from '../../state/store';
+import { getSave, subscribe } from '../../state/store';
 import { requestTilt } from '../systems/Controls';
 import { MAX_CRASHES } from '../data/settings';
 const NUM = 'Anton, Impact, sans-serif', UI = '"Barlow Condensed", "Arial Narrow", sans-serif', OR = '#ff8c1a', GR = '#2fd06a', RD = '#ff5a3c';
@@ -27,17 +27,7 @@ export class HUDScene extends Phaser.Scene {
 
     // generic button
     const mkBtn = (y: number, label: string, fn: () => void, bg: number, w = 300) => { const r = this.add.rectangle(W / 2, y, w, 50, bg).setStrokeStyle(2, 0xffffff, .7).setInteractive({ useHandCursor: true }); const t = T(W / 2, y, label, 26, bg === 0xff8c1a ? '#1a0b00' : '#fff', UI, .5, .5).setStroke('#000000', 0); r.on('pointerup', fn); return { r, t, all: [r, t] as Phaser.GameObjects.GameObject[] }; };
-    // ---- pause overlay
-    const shade = this.add.rectangle(W / 2, H / 2, W, H, 0x031a0f, .8).setInteractive(), pt = T(W / 2, H / 2 - 165, 'PAUSED', 60, '#fff', NUM, .5, .5);
-    const cfg = () => getSave().settings, y0 = H / 2 - 100, bs = 56;
-    const bResume = mkBtn(y0, 'RESUME', () => ev.emit('pause-toggle'), 0xff8c1a);
-    const bCtl = mkBtn(y0 + bs, '', async () => { const next = cfg().controls === 'arrows' ? 'tilt' : 'arrows'; if (next === 'tilt') { const ok = await requestTilt(); if (!ok) { toast('TILT NOT AVAILABLE', RD); return; } } setSettings({ controls: next }); ev.emit('tilt-cal'); refresh(); }, 0x0f5a32);
-    const bMus = mkBtn(y0 + bs * 2, '', () => { setSettings({ music: !cfg().music }); refresh(); }, 0x0f5a32), bSfx = mkBtn(y0 + bs * 3, '', () => { setSettings({ sfx: !cfg().sfx }); refresh(); }, 0x0f5a32);
-    const bQuit = mkBtn(y0 + bs * 4, 'QUIT TO MENU', () => ev.emit('quit-req'), 0x7a2418);
-    const refresh = () => { const s = cfg(); bCtl.t.setText(`STEERING: ${s.controls === 'tilt' ? 'TILT' : 'ARROWS'}`); bMus.t.setText(`MUSIC: ${s.music ? 'ON' : 'OFF'}`); bSfx.t.setText(`SOUND: ${s.sfx ? 'ON' : 'OFF'}`); };
-    const pauseUI: Phaser.GameObjects.GameObject[] = [shade, pt, ...bResume.all, ...bMus.all, ...bSfx.all, ...bQuit.all, ...(touchMode ? bCtl.all : [])];
-    if (!touchMode) { bMus.r.y = bMus.t.y = y0 + bs; bSfx.r.y = bSfx.t.y = y0 + bs * 2; bQuit.r.y = bQuit.t.y = y0 + bs * 3; bCtl.r.setVisible(false).disableInteractive(); bCtl.t.setVisible(false); }
-    refresh(); pauseUI.forEach(o => (o as any).setVisible(false)); const onPaused = (p: boolean) => { refresh(); pauseUI.forEach(o => (o as any).setVisible(p)); }; pauseUI.forEach(o => (o as any).setDepth(50));
+    const cfg = () => getSave().settings; // (the pause menu is a React overlay: see ui/PauseMenu.tsx)
 
     // ---- game over overlay (Endless)
     const goUI: Phaser.GameObjects.GameObject[] = []; let goBtns: ReturnType<typeof mkBtn>[] = [], goTxt: Phaser.GameObjects.Text[] = [];
@@ -54,16 +44,29 @@ export class HUDScene extends Phaser.Scene {
     }
 
     // ---- touch controls: steering arrows OR tilt, plus brake + drift. Throttle is automatic.
+    // Buttons are read from every finger each frame (rectangle hit-test), so you can slide from < to > without lifting and use two thumbs freely.
     if (touchMode) {
-      this.input.addPointer(3); const st = this.registry.get('touch') as Record<string, boolean>, bottom = H - 84;
-      const mk = (x: number, label: string, key: string, size = 46) => { const r = this.add.rectangle(x, bottom, 112, 112, 0x031a0f, .5).setStrokeStyle(3, 0xff8c1a, .95).setInteractive(); const t = T(x, bottom, label, size, '#fff', NUM, .5, .5);
-        const on = (v: boolean) => { st[key] = v; r.setFillStyle(v ? 0xff8c1a : 0x031a0f, v ? .75 : .5); }; r.on('pointerdown', () => on(true)).on('pointerup', () => on(false)).on('pointerout', () => on(false)); return [r, t] as Phaser.GameObjects.GameObject[]; };
-      const arrows = [...mk(76, '<', 'left'), ...mk(200, '>', 'right')], tiltBox = this.add.rectangle(138, bottom, 236, 112, 0x031a0f, .4).setStrokeStyle(3, 0x2fd06a, .9).setInteractive(), tiltTxt = T(138, bottom - 10, 'TILT TO STEER', 22, GR, NUM, .5, .5), tiltSub = T(138, bottom + 22, 'tap to re-centre', 16, '#ffffffcc', UI, .5, .5);
-      tiltBox.on('pointerup', () => { ev.emit('tilt-cal'); toast('RE-CENTRED', GR); }); mk(W - 200, 'BRAKE', 'brake', 24); mk(W - 76, 'DRIFT', 'hand', 24);
-      const bar = this.add.rectangle(138, bottom + 44, 4, 8, 0x2fd06a); const applyCtl = () => { const t = cfg().controls === 'tilt'; arrows.forEach(o => (o as any).setVisible(!t)); [tiltBox, tiltTxt, tiltSub, bar].forEach(o => o.setVisible(t)); }; applyCtl();
-      this.events.on('update', () => { if (cfg().controls === 'tilt') { const v = ((window as any).__tiltValue as number) ?? 0; bar.x = 138 + v * 100; } });
-      const off = () => ev.off('paused', applyCtl); ev.on('paused', applyCtl); this.events.once('shutdown', off);
+      this.input.addPointer(3); const st = this.registry.get('touch') as Record<string, boolean>, bottom = H - 80, S = 120;
+      type B = { key: string; x: number; label: string; size: number; r: Phaser.GameObjects.Rectangle };
+      const mk = (x: number, label: string, key: string, size = 50): B => { const r = this.add.rectangle(x, bottom, S, S, 0x031a0f, .5).setStrokeStyle(3, 0xff8c1a, .95).setDepth(5); T(x, bottom, label, size, '#fff', NUM, .5, .5).setDepth(6); return { key, x, label, size, r }; };
+      const btns = [mk(86, '<', 'left'), mk(224, '>', 'right'), mk(W - 226, 'BRAKE', 'brake', 24), mk(W - 86, 'DRIFT', 'hand', 24)];
+      const tiltBox = this.add.rectangle(155, bottom, 276, S, 0x031a0f, .4).setStrokeStyle(3, 0x2fd06a, .9).setInteractive().setDepth(5), tiltTxt = T(155, bottom - 12, 'TILT TO STEER', 22, GR, NUM, .5, .5).setDepth(6), tiltSub = T(155, bottom + 22, 'tap to re-centre', 16, '#ffffffcc', UI, .5, .5).setDepth(6);
+      tiltBox.on('pointerup', () => { ev.emit('tilt-cal'); toast('RE-CENTRED', GR); });
+      const bar = this.add.rectangle(155, bottom + 46, 4, 8, 0x2fd06a).setDepth(6);
+      const applyCtl = () => { const t = cfg().controls === 'tilt'; btns.slice(0, 2).forEach(b => { b.r.setVisible(!t); }); [tiltBox, tiltTxt, tiltSub, bar].forEach(o => o.setVisible(t)); this.children.list.forEach(o => { if (o instanceof Phaser.GameObjects.Text && (o.text === '<' || o.text === '>')) o.setVisible(!t); }); };
+      applyCtl(); const unsub = subscribe(applyCtl);
+      const hit = (b: B, x: number, y: number) => Math.abs(x - b.x) <= S / 2 + 14 && Math.abs(y - bottom) <= S / 2 + 18;
+      const poll = () => {
+        const down: Record<string, boolean> = { left: false, right: false, brake: false, hand: false }, tiltMode = cfg().controls === 'tilt';
+        for (const p of this.input.manager.pointers) if (p.isDown) for (const b of btns) { if (tiltMode && (b.key === 'left' || b.key === 'right')) continue; if (hit(b, p.x, p.y)) down[b.key] = true; }
+        for (const b of btns) { st[b.key] = down[b.key]; b.r.setFillStyle(down[b.key] ? 0xff8c1a : 0x031a0f, down[b.key] ? .75 : .5); }
+        if (tiltMode) { const v = ((window as any).__tiltValue as number) ?? 0; bar.x = 155 + v * 110; }
+      };
+      this.events.on('update', poll); this.events.once('shutdown', () => { this.events.off('update', poll); unsub(); st.left = st.right = st.brake = st.hand = false; });
     }
+    // ---- run cash + live race score
+    const cash = T(26, 116, 'COINS +0', 20, '#ffd27a'), mpTxt = T(W / 2, 68, '', 22, '#fff', UI, .5, .5).setAlpha(0);
+    const onCoin = (n: number) => { set(cash, `COINS +${n.toLocaleString()}`); this.tweens.killTweensOf(cash); cash.setScale(1.25); this.tweens.add({ targets: cash, scale: 1, duration: 220 }); };
     const hint = (i: { district: string; weather: string; car: string; touchMode: boolean }) => `${i.district.toUpperCase()}  ·  ${i.weather.toUpperCase()}  ·  ${i.car.toUpperCase()}${i.touchMode ? '' : `\nW/S gas-brake  ·  A/D steer  ·  SPACE handbrake = DRIFT  ·  C camera  ·  H horn  ·  ESC pause${endless ? '\nHit 5 cars and it is game over' : ''}`}`;
     const onInfo = (i: { district: string; weather: string; car: string; touchMode: boolean }) => { set(info, hint(i)); this.tweens.add({ targets: info, alpha: 1, duration: 300, hold: 4200, yoyo: true }); };
     let lastLive = 0, lastLiveT = 0;
@@ -71,12 +74,13 @@ export class HUDScene extends Phaser.Scene {
       set(score, s.score.toLocaleString()); set(speed, String(s.speed)); set(combo, s.combo > 1 ? (endless ? `NEAR MISS x${s.combo}` : `COMBO x${s.combo}`) : '');
       if (endless) { set(time, `${(s.dist as number).toLocaleString()} m`); set(lap, `BEST ${(s.best as number).toLocaleString()}m`); pips.forEach((p, i) => p.setFillStyle(i < s.crashes ? 0xff3b2a : 0x2fd06a)); }
       else { set(time, String(s.time)); time.setColor(s.time <= 10 ? OR : '#fff'); set(lap, 'LAP ' + s.laps); }
+      if (typeof s.coins === 'number') set(cash, `COINS +${s.coins.toLocaleString()}`); if (s.mp) { set(mpTxt, `${(s.mp.name as string).toUpperCase()}  ${(s.mp.score as number).toLocaleString()}`); mpTxt.setColor(s.mp.score > s.score ? RD : GR).setAlpha(1); } else mpTxt.setAlpha(0);
       const now = this.time.now; if (s.live !== lastLive && now - lastLiveT > 90) { lastLive = s.live; lastLiveT = now; if (s.live > 0) { set(live, `DRIFT  +${s.live.toLocaleString()}`); live.setAlpha(1); } else live.setAlpha(0); }
     };
     const onCount = (n: number) => { set(count, n > 0 ? String(n) : 'GO!'); count.setColor(n > 0 ? '#fff' : GR).setAlpha(1).setScale(1.5); this.tweens.add({ targets: count, scale: 1, duration: 280, ease: 'Back.Out' }); if (n <= 0) this.tweens.add({ targets: count, alpha: 0, duration: 500, delay: 350 }); };
     const onDrift = (r: any) => { live.setAlpha(0); lastLive = 0; toast(`+${r.points.toLocaleString()} ${r.perfect ? 'PERFECT ' : ''}${r.long ? 'LONG ' : ''}DRIFT`, r.perfect ? GR : OR); };
     const onRadio = (line: string) => { sub.setText('IBOM FM  ·  ' + line); this.tweens.killTweensOf(sub); this.tweens.add({ targets: sub, alpha: 1, duration: 200, hold: 3800, yoyo: true }); };
-    const on: [string, (...a: any[]) => void][] = [['stats', onStats], ['countdown', onCount], ['drift', onDrift], ['radio', onRadio], ['paused', onPaused], ['info', onInfo], ['toast', (m: string, c?: string) => toast(m, c)],
+    const on: [string, (...a: any[]) => void][] = [['stats', onStats], ['coin', onCoin], ['countdown', onCount], ['drift', onDrift], ['radio', onRadio], ['info', onInfo], ['toast', (m: string, c?: string) => toast(m, c)],
       ['nearmiss', (p: number) => toast(`NEAR MISS +${p}`, '#fff')], ['crash', (st: number) => { if (!endless) toast('KAI! WATCH THE ROAD!', RD); else if (st > .5) toast('BIG HIT!', RD); }], ['lap', (l: any) => toast(`LAP ${l.lap}  +${l.bonus}`, GR)]];
     on.forEach(([e, f]) => ev.on(e, f)); this.events.once('shutdown', () => on.forEach(([e, f]) => ev.off(e, f)));
   }

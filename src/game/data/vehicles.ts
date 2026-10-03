@@ -1,12 +1,16 @@
 export interface VehicleStats { id: string; name: string; kind: 'sedan' | 'suv'; price: number; minRank: number; accel: number; handling: number; driftControl: number; topSpeed: number; weight: number; brake: number; color: number }
 export const VEHICLES: VehicleStats[] = [
   { id: 'corolla', name: 'Toyota Corolla', kind: 'sedan', price: 0, minRank: 0, accel: 5, handling: 6, driftControl: 6, topSpeed: 5, weight: 5, brake: 5, color: 0xe6e6e6 },
+  { id: 'accord', name: 'Honda Accord', kind: 'sedan', price: 9000, minRank: 1, accel: 5, handling: 6, driftControl: 6, topSpeed: 6, weight: 5, brake: 5, color: 0x2f4a66 },
   { id: 'camry', name: 'Toyota Camry', kind: 'sedan', price: 12000, minRank: 1, accel: 6, handling: 5, driftControl: 5, topSpeed: 6, weight: 6, brake: 6, color: 0x9aa0a4 },
   { id: 'highlander', name: 'Toyota Highlander', kind: 'suv', price: 18000, minRank: 2, accel: 5, handling: 4, driftControl: 4, topSpeed: 5, weight: 8, brake: 5, color: 0x2f4a66 },
   { id: 'venza', name: 'Toyota Venza', kind: 'suv', price: 20000, minRank: 2, accel: 6, handling: 5, driftControl: 5, topSpeed: 6, weight: 7, brake: 6, color: 0x7a5230 },
   { id: 'rx', name: 'Lexus RX', kind: 'suv', price: 30000, minRank: 3, accel: 7, handling: 6, driftControl: 6, topSpeed: 7, weight: 7, brake: 7, color: 0x1d2024 },
   { id: 'es', name: 'Lexus ES', kind: 'sedan', price: 32000, minRank: 3, accel: 7, handling: 7, driftControl: 7, topSpeed: 7, weight: 6, brake: 7, color: 0xa8281f },
   { id: 'c-class', name: 'Mercedes C-Class', kind: 'sedan', price: 45000, minRank: 4, accel: 8, handling: 8, driftControl: 8, topSpeed: 8, weight: 5, brake: 8, color: 0xc4c8d0 },
+  { id: 'e-class', name: 'Mercedes E-Class', kind: 'sedan', price: 62000, minRank: 5, accel: 9, handling: 8, driftControl: 8, topSpeed: 9, weight: 6, brake: 9, color: 0x1d2024 },
+  { id: 'range', name: 'Range Rover', kind: 'suv', price: 78000, minRank: 5, accel: 8, handling: 7, driftControl: 7, topSpeed: 8, weight: 8, brake: 8, color: 0x0f3d2a },
+  { id: 'g-class', name: 'Mercedes G-Class', kind: 'suv', price: 110000, minRank: 6, accel: 9, handling: 7, driftControl: 8, topSpeed: 9, weight: 9, brake: 9, color: 0x232a2e },
 ];
 export type Upgrades = Record<'engine' | 'tires' | 'suspension' | 'brakes' | 'transmission' | 'turbo' | 'steering', number>;
 export const NO_UPGRADES: Upgrades = { engine: 0, tires: 0, suspension: 0, brakes: 0, transmission: 0, turbo: 0, steering: 0 };

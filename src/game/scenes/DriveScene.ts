@@ -17,10 +17,13 @@ import { CameraRig } from '../systems/CameraRig';
 import { boxHit, resolveHit } from '../systems/Collision';
 import { HazardField } from '../systems/Hazards';
 import { ImpactFx } from '../systems/ImpactFx';
-import { tilt } from '../systems/Controls';
-import { getSave, setSettings } from '../../state/store';
+import { tilt, SteerShaper } from '../systems/Controls';
+import { CoinField, COIN_VALUE, COIN_RADIUS } from '../systems/Pickups';
+import type { MpSession, MpMsg } from '../systems/Net';
+import { PPM } from '../data/vehicles';
+import { getSave, setSettings, addCoins, grantLive } from '../../state/store';
 
-const RUN_SECONDS = 90, LAP_BONUS = 500, COUNTDOWN = 3.2, TRAFFIC_TINTS = [0x8a8f94, 0x2f4a66, 0xa8281f, 0xe6e6e6, 0x2c6b3e];
+const RUN_SECONDS = 90, MP_WAIT_MAX = 20, LAP_BONUS = 500, COUNTDOWN = 3.2, TRAFFIC_TINTS = [0x8a8f94, 0x2f4a66, 0xa8281f, 0xe6e6e6, 0x2c6b3e];
 type TCar = { k: 'sedan' | 'suv'; car: Phaser.GameObjects.Container; f: number; spd: number; base: number; off: number; baseOff: number; nm: boolean; cool: number; kick: number; rot: number; spinV: number; l: number; w: number; color: number };
 type Touch = { left: boolean; right: boolean; brake: boolean; hand: boolean };
 
@@ -34,6 +37,9 @@ export class DriveScene extends Phaser.Scene {
   private keys!: Record<string, Phaser.Input.Keyboard.Key>; private touch!: Touch; private touchMode = false; private baseColor = 0xffffff; private mass = 1; private pl = 62; private pw = 27;
   private offT = 0; private fastT = 0; private r3d?: Renderer3D; private r3dCars: R3DCar[] = []; private r3dHaz: R3DHaz[] = []; private shake3 = 0; private audio!: GameAudio; private radio!: Radio; private density = 1; private dmg = 0;
   private timeLeft = RUN_SECONDS; private countdown = COUNTDOWN; private lastCount = 4; private paused = false; private ended = false; private tiltChecked = false;
+  private coinsF!: CoinField; private pickups = 0; private distPx = 0; private achT = 0; private nmCount = 0; private shaper = new SteerShaper();
+  private mp: MpSession | null = null; private mpWait = false; private mpWaited = 0; private mpSendT = 0; private mpOffs: (() => void)[] = []; private oppReady = false; private oppDone = false; private oppScore = 0; private oppName = ''; private finishing = false; private meReady = false; private lastLead = true;
+  private opp: { car: Phaser.GameObjects.Container; x: number; y: number; h: number; has: boolean; color: number } | null = null; private oppKind: 'sedan' | 'suv' = 'sedan';
   private nextSpawn = 2; private hint = 4; private lastIdx = 4; private laps = 0; private armed = false; private floodT = 0; private hudT = 0; private frame = 0; private musT = 0;
 
   init(cfg: RunConfig) {
@@ -42,6 +48,7 @@ export class DriveScene extends Phaser.Scene {
     this.layout = LAYOUTS[this.dist.id] ?? LAYOUTS['ibom-plaza']; this.track = buildTrack(this.layout); this.pp = toPhysics(this.veh, cfg.car.upgrades);
     this.weather = cfg.weather ?? Phaser.Utils.Array.GetRandom(this.dist.weather); this.density = this.dist.traffic + this.dist.difficulty * .1;
     this.scorer = new DriftScorer(); this.timeLeft = RUN_SECONDS; this.countdown = COUNTDOWN; this.lastCount = 4; this.paused = false; this.ended = false; this.tiltChecked = false; this.dmg = 0;
+    this.pickups = 0; this.distPx = 0; this.achT = 0; this.nmCount = 0; this.shaper = new SteerShaper(); this.mp = cfg.mp ?? null; this.mpWait = !!cfg.mp; this.mpWaited = 0; this.mpSendT = 0; this.mpOffs = []; this.oppReady = false; this.oppDone = false; this.oppScore = 0; this.oppName = cfg.mp?.opponent?.name ?? ''; this.finishing = false; this.meReady = false; this.opp = null; this.oppKind = cfg.mp?.opponent?.kind ?? 'sedan';
     this.traffic = []; this.skids = []; this.skidAge = []; this.skidI = 0; this.hint = 4; this.lastIdx = 4; this.laps = 0; this.armed = false; this.floodT = 0; this.nextSpawn = 2;
     const suv = this.veh.kind === 'suv'; this.pl = suv ? 68 : 62; this.pw = suv ? 31 : 27; this.mass = 1 + (this.veh.weight - 5) * .08;
   }
@@ -70,23 +77,26 @@ export class DriveScene extends Phaser.Scene {
       const suv = i % 4 === 1, color = i % 3 === 0 ? 0xffb300 : Phaser.Utils.Array.GetRandom(TRAFFIC_TINTS), base = 2.2 + Math.random() * 2.3, off = (i % 2 ? 1 : -1) * t.width * .2;
       this.traffic.push({ k: suv ? 'suv' : 'sedan', car: buildCar(this, { color, kind: suv ? 'suv' : 'sedan' }).setDepth(8), f: 30 + (i * (t.n - 60)) / Math.max(1, cnt), spd: base, base, off, baseOff: off, nm: false, cool: 0, kick: 0, rot: 0, spinV: 0, l: suv ? 68 : 62, w: suv ? 31 : 27, color });
     }
+    this.coinsF = new CoinField(this, 90); this.seedCoins();
+    if (this.mp?.opponent) { const o = this.mp.opponent; this.opp = { car: buildCar(this, { color: o.color, decal: o.decal, glass: o.glass, kind: o.kind }).setDepth(29).setAlpha(.8).setVisible(false), x: 0, y: 0, h: 0, has: false, color: o.color }; }
     // camera: the rig replaces startFollow so views can rotate / zoom
-    this.rig = new CameraRig(cam); this.rig.snap(s.x, s.y, this.phys.heading);
+    this.touchMode = !!this.registry.get('touchMode'); this.rig = new CameraRig(cam, { headingUp: this.touchMode }); this.rig.snap(s.x, s.y, this.phys.heading);
     this.add.rectangle(W / 2, H / 2, W * 3, H * 3, 0x02140b, (1 - vis) * .95).setScrollFactor(0).setDepth(20);
     this.keys = this.input.keyboard!.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT,SPACE,SHIFT,H,M,C,V,ESC,P') as Record<string, Phaser.Input.Keyboard.Key>;
     this.touch = this.registry.get('touch') as Touch; this.touchMode = !!this.registry.get('touchMode'); this.input.addPointer(3); if (this.touchMode) tilt.start();
     this.registry.set('mode', 'drift'); this.registry.set('weather', this.weather);
     this.scene.launch('HUD'); this.world.update(this.rig.bounds(), true);
-    this.r3d?.setup({ mode: 'drift', dist: this.dist, weather: this.weather, seed: [...this.dist.id].reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 7) & 0xffff, track: this.track, layout: this.layout, player: { kind: this.veh.kind, color: this.baseColor, decal: look.decal, wheel: WHEEL_TINT[look.wheels], glass: .55 + look.tint * .15 }, traffic: this.traffic.map(t => t.k) });
+    this.r3d?.setup({ mode: 'drift', dist: this.dist, weather: this.weather, seed: [...this.dist.id].reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 7) & 0xffff, track: this.track, layout: this.layout, player: { kind: this.veh.kind, color: this.baseColor, decal: look.decal, wheel: WHEEL_TINT[look.wheels], glass: .55 + look.tint * .15 }, traffic: [...this.traffic.map(t => t.k), ...(this.opp ? [this.oppKind] : [])] });
     this.applyView(getSave().settings.view);
     this.audio = new GameAudio(this.weather, look.horn); music.start('drive');
-    this.radio = new Radio(line => { this.game.events.emit('radio', line); if (!this.audio.isMuted()) speak(line); });
-    const toggle = () => { this.paused = !this.paused; this.audio.setPaused(this.paused); this.game.events.emit('paused', this.paused); };
+    this.radio = new Radio(line => { const st = getSave().settings; if (st.radioText) this.game.events.emit('radio', line); if (st.radio > 0) speak(line, st.radio); });
+    let overlay = false; const toggle = () => { if (this.mp) { overlay = !overlay; this.game.events.emit('paused', overlay); return; } this.paused = !this.paused; this.audio.setPaused(this.paused); this.game.events.emit('paused', this.paused); }; // live races never freeze
     const cycle = () => { const v = this.rig.next(); setSettings({ view: v }); this.applyView(v); this.game.events.emit('toast', `VIEW: ${VIEW_LABEL[v].toUpperCase()}`); };
     const quit = () => this.game.events.emit('quit'), recal = () => tilt.calibrate();
     this.game.events.on('pause-toggle', toggle); this.game.events.on('cam-next', cycle); this.game.events.on('quit-req', quit); this.game.events.on('tilt-cal', recal);
-    const stop = () => { this.r3d?.setActive(false); if (this.cameras?.main) this.cameras.main.visible = true; this.game.events.off('pause-toggle', toggle); this.game.events.off('cam-next', cycle); this.game.events.off('quit-req', quit); this.game.events.off('tilt-cal', recal); tilt.stop(); music.stop(); this.audio.destroy(); if ('speechSynthesis' in window) speechSynthesis.cancel(); };
+    const stop = () => { this.mpOffs.forEach(f => f()); this.mpOffs = []; this.r3d?.setActive(false); if (this.cameras?.main) this.cameras.main.visible = true; this.game.events.off('pause-toggle', toggle); this.game.events.off('cam-next', cycle); this.game.events.off('quit-req', quit); this.game.events.off('tilt-cal', recal); tilt.stop(); music.stop(); this.audio.destroy(); if ('speechSynthesis' in window) speechSynthesis.cancel(); };
     this.events.once('shutdown', stop); this.events.once('destroy', stop);
+    this.setupMp();
     this.time.delayedCall(9000, () => { if (this.weather === 'rain' || this.weather === 'heavy_rain') this.radio.say('rain'); else if (this.weather === 'night') this.radio.say('night'); });
     this.time.delayedCall(350, () => this.game.events.emit('info', { district: this.dist.name, weather: WEATHER_FX[this.weather].label, car: this.veh.name, touchMode: this.touchMode })); // HUD scene boots a frame later
   }
@@ -97,7 +107,8 @@ export class DriveScene extends Phaser.Scene {
     while (cs.length < this.traffic.length) cs.push({ x: 0, y: 0, h: 0, on: true, brake: false, color: 0, hit: false });
     this.traffic.forEach((t, i) => { const c = cs[i]; c.x = t.car.x; c.y = t.car.y; c.h = t.car.rotation; c.color = t.color; c.hit = t.cool > 0 && Math.abs(t.spinV) > .05; });
     const hl = this.haz.draw(); hs.length = hl.length; hl.forEach((h, i) => { const o = hs[i] ?? (hs[i] = { kind: 'cone', x: 0, y: 0, a: 1, s: 1, r: 0 }); o.kind = h.kind; o.x = h.x; o.y = h.y; o.a = h.alpha; o.s = h.scaleX; o.r = h.rotation; });
-    r.frame({ dt, px: P.x, py: P.y, heading: P.heading, vx: P.vx, vy: P.vy, steer: P.delta, ax: P.ax, ay: P.ay, wheelRate: P.wheelRate, brake, ratio: P.speed / this.pp.maxSpeed, dmg: this.dmg, blink: false, shake: this.shake3, cars: cs, haz: hs });
+    if (this.opp) { const i = this.traffic.length; while (cs.length <= i) cs.push({ x: 0, y: 0, h: 0, on: false, brake: false, color: 0, hit: false }); const c = cs[i], o = this.opp; c.x = o.car.x; c.y = o.car.y; c.h = o.car.rotation; c.on = o.has; c.color = o.color; c.brake = false; c.hit = false; }
+    r.frame({ dt, px: P.x, py: P.y, heading: P.heading, vx: P.vx, vy: P.vy, steer: P.delta, ax: P.ax, ay: P.ay, wheelRate: P.wheelRate, brake, ratio: P.speed / this.pp.maxSpeed, dmg: this.dmg, blink: false, shake: this.shake3, cars: cs, haz: hs, coins: this.coinsF.points(P.x, P.y) });
   }
   private spawnHazard() {
     const kind = Phaser.Utils.Array.GetRandom(['pothole', 'cone', 'flood'] as const), cnt = kind === 'cone' ? 3 : 1; // cones = construction cluster
@@ -110,7 +121,30 @@ export class DriveScene extends Phaser.Scene {
     this.fx.hit(x, y, strength, color); this.shake3 = Math.max(this.shake3, .35 + strength); this.cameras.main.shake(110 + strength * 230, .003 + strength * .012); this.audio.crash(strength); this.radio.say(line ?? (strength > .6 ? 'bigcrash' : 'crash'));
     if (navigator.vibrate) navigator.vibrate(30 + strength * 90); this.game.events.emit('crash', strength);
   }
-  private near() { this.audio.whoosh(); this.game.events.emit('nearmiss', this.scorer.nearMiss()); this.radio.say('nearmiss'); }
+  private near() { this.nmCount++; this.audio.whoosh(); this.game.events.emit('nearmiss', this.scorer.nearMiss()); this.radio.say('nearmiss'); }
+  /** Coin trails along the road: a cluster of five every ~30 samples, a little off the racing line. */
+  private seedCoins() {
+    const t = this.track, f = this.coinsF; f.clear(); let k = 0;
+    for (let i = 14; i < t.n - 8; i += 30, k++) { const off = ((k % 3) - 1) * t.width * .2; for (let j = 0; j < 5; j++) { const q = at(t, i + j * 1.4, off); f.place(q.x, q.y); } }
+  }
+  private gotCoin() {
+    this.pickups++; addCoins(COIN_VALUE); this.audio.coin(); this.game.events.emit('coin', this.pickups * COIN_VALUE); if (this.pickups % 10 === 0) this.radio.say('pickup');
+  }
+  private liveAch() {
+    const got = grantLive({ mode: 'drift', points: this.scorer.total, maxCombo: this.scorer.maxCombo, topSpeed: Math.round(this.scorer.topSpeed * KMH), distanceM: this.distPx / PPM, drifts: this.scorer.drifts, pickups: this.pickups, nearMisses: this.nmCount, laps: this.laps });
+    got.forEach(a => { this.game.events.emit('achievement', a); this.audio.chime(); this.radio.say('achievement'); });
+  }
+  // ---- live race: lobby already connected; both sides load, then the host says GO
+  private setupMp() {
+    const m = this.mp; if (!m) return; const off = (f: () => void) => this.mpOffs.push(f);
+    off(m.on('ready', () => { this.oppReady = true; this.tryGo(); }));
+    off(m.on('go', () => { this.mpWait = false; }));
+    off(m.on('s', (d: MpMsg) => { if (!this.opp) return; this.opp.x = d.x; this.opp.y = d.y; this.opp.h = d.h; this.oppScore = d.sc; if (!this.opp.has) { this.opp.has = true; this.opp.car.setPosition(d.x, d.y).setRotation(d.h).setVisible(true); } }));
+    off(m.on('end', (d: MpMsg) => { this.oppDone = true; this.oppScore = d.sc; }));
+    off(m.on('_close', () => { if (this.mpWait) this.mpWait = false; this.mp = null; this.game.events.emit('toast', `${this.oppName.toUpperCase() || 'FRIEND'} LEFT - SOLO RUN`, '#ff5a3c'); if (this.opp) this.opp.car.setVisible(false); }));
+    this.oppReady = m.peerReady; if (m.goSeen) this.mpWait = false; this.meReady = true; m.send({ t: 'ready' }); this.tryGo(); this.game.events.emit('toast', `WAITING FOR ${this.oppName.toUpperCase() || 'FRIEND'}...`, '#ffffff');
+  }
+  private tryGo() { const m = this.mp; if (m && m.role === 'host' && this.meReady && this.oppReady && this.mpWait) { this.mpWait = false; m.send({ t: 'go' }); } }
   private skid(x: number, y: number, rot: number) { const i = this.skidI++ % this.skids.length; this.skids[i].setPosition(x, y).setRotation(rot).setAlpha(.5).setVisible(true); this.skidAge[i] = 0; }
 
   update(_t: number, ms: number) {
@@ -120,6 +154,7 @@ export class DriveScene extends Phaser.Scene {
     if (Phaser.Input.Keyboard.JustDown(k.C) || Phaser.Input.Keyboard.JustDown(k.V)) this.game.events.emit('cam-next');
     const P = this.phys, tr = this.track, n = tr.n, view = this.rig;
     const ground = this.ground; ground.setPosition(view.centerX, view.centerY); ground.tilePositionX = view.centerX - ground.width / 2; ground.tilePositionY = view.centerY - ground.height / 2; this.world.update(view.bounds());
+    if (this.mpWait) { this.mpWaited += dt; if (this.mpWaited > MP_WAIT_MAX) { this.mpWait = false; this.game.events.emit('toast', 'NO ANSWER - STARTING', '#ff5a3c'); } view.update(dt, P.x, P.y, P.heading, 0, 0, 0); this.audio.update(0, 0); this.draw3d(dt, false); return; }
     if (this.countdown > 0) { // 3-2-1-GO with the car held on the line
       this.countdown -= dt; const c = Math.ceil(this.countdown - .2); if (c !== this.lastCount) { this.lastCount = c; this.game.events.emit('countdown', c); this.audio.countdown(c); if (c <= 0) { tilt.calibrate(); this.radio.say('start'); } }
       view.update(dt, P.x, P.y, P.heading, 0, 0, 0); this.audio.update(0, 0); this.draw3d(dt, false); return;
@@ -127,6 +162,7 @@ export class DriveScene extends Phaser.Scene {
     const t = this.touch, set = getSave().settings, left = k.A.isDown || k.LEFT.isDown || t.left, right = k.D.isDown || k.RIGHT.isDown || t.right, brake = k.S.isDown || k.DOWN.isDown || t.brake;
     const throttle = k.W.isDown || k.UP.isDown || (this.touchMode && !brake) ? 1 : 0, hand = k.SPACE.isDown || k.SHIFT.isDown || t.hand;
     let steer = (right ? 1 : 0) - (left ? 1 : 0); if (this.touchMode && set.controls === 'tilt') steer = Math.max(-1, Math.min(1, steer + tilt.value));
+    if (this.touchMode && !this.r3d?.active) steer = this.shaper.step(steer, dt, this.phys.speed / this.pp.maxSpeed, set.controls === 'tilt'); else this.shaper.reset(); // 2D views only; the 3D view already feels right
     if (!this.tiltChecked && this.countdown < -1.5) { this.tiltChecked = true; if (this.touchMode && set.controls === 'tilt' && !tilt.got) this.game.events.emit('toast', 'NO TILT SENSOR - SWITCH TO ARROWS IN PAUSE MENU'); }
     if (Phaser.Input.Keyboard.JustDown(k.H)) this.audio.horn(); if (Phaser.Input.Keyboard.JustDown(k.M)) this.audio.toggleMute();
 
@@ -147,10 +183,13 @@ export class DriveScene extends Phaser.Scene {
     const res = this.scorer.update(dt, off ? 0 : speed, P.slipDeg);
     if (res) { this.game.events.emit('drift', res); this.radio.say(res.perfect ? 'perfect' : res.combo >= 4 ? 'combo' : 'drift'); }
     this.audio.update(speed / this.pp.maxSpeed, Math.min(1, Math.abs(P.vl) / 170), throttle, P.rpm, P.gear); this.radio.tick(dt); this.draw3d(dt, brake);
+    this.distPx += speed * dt; this.coinsF.collect(P.x, P.y, COIN_RADIUS, () => this.gotCoin()); this.coinsF.animate(this.time.now); if ((this.achT -= dt) <= 0) { this.achT = 1; this.liveAch(); }
+    if (this.mp && this.mp.state === 'open' && (this.mpSendT -= dt) <= 0) { this.mpSendT = .1; this.mp.send({ t: 's', x: Math.round(P.x), y: Math.round(P.y), h: +P.heading.toFixed(3), sc: this.scorer.total }); }
+    if (this.opp?.has) { const o = this.opp, k = Math.min(1, dt * 12); o.car.x += (o.x - o.car.x) * k; o.car.y += (o.y - o.car.y) * k; o.car.rotation += Phaser.Math.Angle.Wrap(o.h - o.car.rotation) * k; if (this.frame % 30 === 0 && this.mp) { const lead = this.scorer.total >= this.oppScore; if (lead !== this.lastLead) { this.lastLead = lead; this.radio.say(lead ? 'mplead' : 'mptrail'); } } }
     this.musT -= dt; if (this.musT <= 0) { this.musT = .5; music.setIntensity(.25 + Math.min(1, this.scorer.combo / 6) * .6); }
     // laps
     if (loc.i > n * .45 && loc.i < n * .55) this.armed = true;
-    if (this.armed && this.lastIdx > n * .85 && loc.i < n * .15) { this.armed = false; this.laps++; this.radio.say('lap'); this.scorer.bonus(LAP_BONUS); this.game.events.emit('lap', { lap: this.laps, bonus: LAP_BONUS }); }
+    if (this.armed && this.lastIdx > n * .85 && loc.i < n * .15) { this.armed = false; this.laps++; this.radio.say('lap'); this.scorer.bonus(LAP_BONUS); this.seedCoins(); this.game.events.emit('lap', { lap: this.laps, bonus: LAP_BONUS }); }
     this.lastIdx = loc.i;
     // hazards
     this.nextSpawn -= dt; if (this.nextSpawn <= 0) { this.spawnHazard(); this.nextSpawn = Math.max(.8, 2.6 - this.density); }
@@ -178,12 +217,15 @@ export class DriveScene extends Phaser.Scene {
       if (d > 1800) tc.f = (this.hint + 30 + Math.random() * 20) % n;
     }
     // HUD feed (20 Hz)
-    this.hudT += dt; if (this.hudT > .05) { this.hudT = 0; this.game.events.emit('stats', { score: this.scorer.total, combo: this.scorer.combo, speed: Math.round(speed * KMH), time: Math.ceil(this.timeLeft), laps: this.laps, live: this.scorer.live, off }); }
+    this.hudT += dt; if (this.hudT > .05) { this.hudT = 0; this.game.events.emit('stats', { score: this.scorer.total, combo: this.scorer.combo, speed: Math.round(speed * KMH), time: Math.ceil(this.timeLeft), laps: this.laps, live: this.scorer.live, off, coins: this.pickups * COIN_VALUE, mp: this.mp && this.oppName ? { name: this.oppName, score: this.oppScore } : null }); }
     this.timeLeft -= dt; if (this.timeLeft <= 0) this.finish();
   }
   private finish() {
-    this.ended = true; const bonus = this.scorer.finish();
-    this.game.events.emit('end', { districtId: this.dist.id, vehicleId: this.veh.id, weather: this.weather, points: this.scorer.total, durationSec: RUN_SECONDS, maxCombo: this.scorer.maxCombo, drifts: this.scorer.drifts, topSpeed: Math.round(this.scorer.topSpeed * KMH), clean: bonus > 0, cleanBonus: bonus, laps: this.laps });
-    this.scene.stop('HUD');
+    if (this.finishing) return; this.finishing = true; this.ended = true; const bonus = this.scorer.finish(), mp = this.mp, mine = this.scorer.total;
+    const base = { districtId: this.dist.id, vehicleId: this.veh.id, weather: this.weather, points: mine, durationSec: RUN_SECONDS, maxCombo: this.scorer.maxCombo, drifts: this.scorer.drifts, topSpeed: Math.round(this.scorer.topSpeed * KMH), clean: bonus > 0, cleanBonus: bonus, laps: this.laps, mode: 'drift' as const, pickups: this.pickups, nearMisses: this.nmCount, distanceM: Math.round(this.distPx / PPM) };
+    const emit = (withMp: boolean) => { this.mpOffs.forEach(f => f()); this.mpOffs = []; mp?.resetRace(); this.game.events.emit('end', { ...base, ...(withMp ? { mp: { oppName: this.oppName, oppScore: this.oppScore, won: mine > this.oppScore, tie: mine === this.oppScore } } : {}) }); this.scene.stop('HUD'); };
+    if (!mp || mp.state !== 'open') { emit(false); return; }
+    mp.send({ t: 'end', sc: mine }); this.game.events.emit('toast', `WAITING FOR ${this.oppName.toUpperCase()}...`, '#ffffff');
+    let waited = 0; const t = this.time.addEvent({ delay: 200, loop: true, callback: () => { waited += .2; if (this.oppDone || waited > 8 || !this.mp || this.mp.state !== 'open') { t.remove(); emit(this.oppDone || this.oppScore > 0); } } });
   }
 }

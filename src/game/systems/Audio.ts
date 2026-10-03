@@ -1,20 +1,21 @@
-/** Fully procedural Web Audio (no asset downloads): engine with gears + turbo, tyre screech, wind, rain, crashes, UI sounds and a generative
- *  Afrobeats-style music loop. One shared AudioContext; settings.music / settings.sfx decide what is audible. */
+/** Fully procedural Web Audio (no asset downloads): smooth engine, tyre screech, wind, rain, crashes, UI sounds and a generative
+ *  Afrobeats-style music loop. One shared AudioContext with four independent channels (settings.music / engine / sfx here, radio in Radio.ts). */
 import { getSave, setSettings, subscribe } from '../../state/store';
+import { EngineSynth } from './Engine';
 
-interface Bus { ctx: AudioContext; master: GainNode; sfx: GainNode; music: GainNode; noise: AudioBuffer }
+interface Bus { ctx: AudioContext; master: GainNode; sfx: GainNode; music: GainNode; engine: GainNode; noise: AudioBuffer }
 let bus: Bus | null = null;
 export function getBus(): Bus {
   if (bus) return bus;
   const AC = window.AudioContext || (window as any).webkitAudioContext, ctx: AudioContext = new AC();
-  const master = ctx.createGain(), comp = ctx.createDynamicsCompressor(), sfx = ctx.createGain(), music = ctx.createGain();
-  master.gain.value = .9; comp.threshold.value = -16; comp.ratio.value = 4; master.connect(comp); comp.connect(ctx.destination); sfx.connect(master); music.connect(master);
+  const master = ctx.createGain(), comp = ctx.createDynamicsCompressor(), sfx = ctx.createGain(), music = ctx.createGain(), engine = ctx.createGain();
+  master.gain.value = .9; comp.threshold.value = -18; comp.knee.value = 24; comp.ratio.value = 3; master.connect(comp); comp.connect(ctx.destination); sfx.connect(master); music.connect(master); engine.connect(master);
   const noise = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate), d = noise.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-  bus = { ctx, master, sfx, music, noise }; applyAudioSettings(); return bus;
+  bus = { ctx, master, sfx, music, engine, noise }; applyAudioSettings(); return bus;
 }
 export function applyAudioSettings() {
   if (!bus) return; const s = getSave().settings, t = bus.ctx.currentTime;
-  bus.sfx.gain.setTargetAtTime(s.sfx ? .85 : 0, t, .04); bus.music.gain.setTargetAtTime(s.music ? .5 : 0, t, .08);
+  bus.sfx.gain.setTargetAtTime(s.sfx * 1.05, t, .04); bus.engine.gain.setTargetAtTime(s.engine * 1.2, t, .06); bus.music.gain.setTargetAtTime(s.music * .85, t, .08);
 }
 subscribe(applyAudioSettings);
 /** Call from a tap/key. Browsers keep audio suspended until the player interacts. */
@@ -59,7 +60,7 @@ export class Music {
   private pump() {
     if (!bus || !this.track) return; const c = bus.ctx, sixteenth = 60 / BPM[this.kind] / 4;
     if (this.nextT < c.currentTime - .5) this.nextT = c.currentTime + .05; // tab was backgrounded: resync instead of burst-playing
-    while (this.nextT < c.currentTime + .14) { if (getSave().settings.music) this.play(this.step, this.nextT + ((this.step & 1) ? sixteenth * .1 : 0)); this.nextT += sixteenth; this.step++; }
+    while (this.nextT < c.currentTime + .14) { if (getSave().settings.music > 0) this.play(this.step, this.nextT + ((this.step & 1) ? sixteenth * .1 : 0)); this.nextT += sixteenth; this.step++; }
   }
   private play(step: number, t: number) {
     const b = bus!, out = this.track!, k = this.kind, bar = (step >> 4) & 3, st = step & 15, ch = CHORDS[bar], I = this.intensity, menu = k === 'menu', v = menu ? .6 : 1;
@@ -87,59 +88,73 @@ const HORNS: Record<string, HornSpec> = {
   keke: { f: [880], dur: .18, type: 'square' }, air: { f: [233, 293], dur: 1, type: 'sawtooth' },
 };
 export class GameAudio {
-  private b = getBus(); private out: GainNode; private sources: (OscillatorNode | AudioBufferSourceNode)[] = []; private dead = false; private timer = 0;
-  private eng: OscillatorNode[] = []; private engLp: BiquadFilterNode; private engGain: GainNode; private screech: GainNode; private wind: GainNode; private turbo: GainNode; private turboOsc: OscillatorNode;
-  private gear = 0; private prevLoad = 0; private lastPop = 0;
+  private b = getBus(); private out: GainNode; private carOut: GainNode; private sources: (OscillatorNode | AudioBufferSourceNode)[] = []; private dead = false; private timer = 0; private eng: EngineSynth;
+  private screech: GainNode; private wind: GainNode; private last = 0;
+  /** `out` carries crashes, horn, coins, rain and other effects (sfx channel). `carOut` carries the engine, tyres and wind (engine channel). */
   constructor(weather: string, private hornId: string) {
-    const b = this.b, c = b.ctx; this.out = c.createGain(); this.out.connect(b.sfx); unlockAudio();
-    this.engLp = c.createBiquadFilter(); this.engLp.type = 'lowpass'; this.engGain = c.createGain(); this.engGain.gain.value = .07;
-    const shaper = c.createWaveShaper(), curve = new Float32Array(256); for (let i = 0; i < 256; i++) { const x = i / 128 - 1; curve[i] = Math.tanh(x * 2.2); } shaper.curve = curve;
-    ([['sawtooth', 1], ['sawtooth', 1.006], ['square', .5], ['sine', .25]] as [OscillatorType, number][]).forEach(([t]) => { const o = c.createOscillator(); o.type = t; o.frequency.value = 55; o.connect(this.engLp); o.start(); this.eng.push(o); this.sources.push(o); });
-    this.engLp.connect(shaper); shaper.connect(this.engGain); this.engGain.connect(this.out);
-    this.turbo = c.createGain(); this.turbo.gain.value = 0; this.turboOsc = c.createOscillator(); this.turboOsc.type = 'sine'; this.turboOsc.frequency.value = 2200; this.turboOsc.connect(this.turbo); this.turbo.connect(this.out); this.turboOsc.start(); this.sources.push(this.turboOsc);
-    this.screech = this.loop('bandpass', 1800, 0, 4); this.wind = this.loop('highpass', 700, 0, .6);
-    this.loop('highpass', 1200, weather === 'heavy_rain' ? .2 : weather === 'rain' ? .1 : 0, .7); this.loop('lowpass', 260, .05, .7); this.loop('bandpass', 900, weather === 'night' ? .008 : .016, .5);
-    this.timer = window.setInterval(() => { if (!this.dead) this.beep([Math.random() < .5 ? 420 : 520], .25, .02, 'square'); }, 7000 + Math.random() * 5000);
+    const b = this.b, c = b.ctx; this.out = c.createGain(); this.out.connect(b.sfx); this.carOut = c.createGain(); this.carOut.connect(b.engine); unlockAudio();
+    this.eng = new EngineSynth(c, this.carOut, b.noise);
+    this.screech = this.loop('bandpass', 1150, 0, 1.6, this.carOut, 3200); this.wind = this.loop('bandpass', 520, 0, .5, this.carOut, 1800);
+    this.loop('highpass', 1200, weather === 'heavy_rain' ? .16 : weather === 'rain' ? .08 : 0, .7); this.loop('lowpass', 260, .035, .7); this.loop('bandpass', 900, weather === 'night' ? .006 : .012, .5);
+    this.timer = window.setInterval(() => { if (!this.dead) this.beep([Math.random() < .5 ? 420 : 520], .3, .012, 'triangle'); }, 14000 + Math.random() * 10000); // distant horn in the traffic
   }
-  private loop(type: BiquadFilterType, freq: number, gain: number, q: number) {
-    const c = this.b.ctx, s = noiseSrc(this.b, true), f = c.createBiquadFilter(), g = c.createGain(); f.type = type; f.frequency.value = freq; f.Q.value = q; g.gain.value = gain; s.connect(f); f.connect(g); g.connect(this.out); s.start(); this.sources.push(s); return g;
+  /** Looping filtered noise. `lp` adds a low-pass after the band so it never turns hissy. */
+  private loop(type: BiquadFilterType, freq: number, gain: number, q: number, dest: AudioNode = this.out, lp = 0) {
+    const c = this.b.ctx, s = noiseSrc(this.b, true), f = c.createBiquadFilter(), g = c.createGain(); f.type = type; f.frequency.value = freq; f.Q.value = q; g.gain.value = gain; s.connect(f);
+    if (lp) { const l = c.createBiquadFilter(); l.type = 'lowpass'; l.frequency.value = lp; f.connect(l); l.connect(g); } else f.connect(g);
+    g.connect(dest); s.start(); this.sources.push(s); return g;
   }
   private beep(freqs: number[], dur: number, vol: number, type: OscillatorType) { const t = this.b.ctx.currentTime; for (const f of freqs) tone(this.b, this.out, t, type, f, f, vol, dur, .01); }
-  /** ratio 0..1 of top speed, slip 0..1 sideways, load 0..1 throttle */
+  /** ratio 0..1 of top speed, slip 0..1 sideways, load 0..1 throttle, prpm 0..1 engine speed, pgear 1..6 */
   update(ratio: number, slip: number, load = 0, prpm?: number, pgear?: number) {
-    if (this.dead) return; const c = this.b.ctx, t = c.currentTime, r = Math.min(1, ratio), x = r * 5; let gear = Math.min(4, Math.floor(x)), rpm = x - gear;
-    if (prpm !== undefined && pgear !== undefined) { gear = Math.min(5, pgear - 1); rpm = Math.max(0, Math.min(1, (prpm - .22) / .78)); }
-    const f = 48 + rpm * 78 + gear * 9 + load * 6, mult = [1, 1.006, .5, .25];
-    this.eng.forEach((o, i) => o.frequency.setTargetAtTime(f * mult[i], t, .04));
-    this.engLp.frequency.setTargetAtTime(380 + r * 1500 + load * 700, t, .08); this.engGain.gain.setTargetAtTime(.06 + r * .06 + load * .035, t, .08);
-    this.screech.gain.setTargetAtTime(slip > .3 ? (slip - .3) * .32 : 0, t, .05); this.wind.gain.setTargetAtTime(r * r * .07, t, .1);
-    this.turbo.gain.setTargetAtTime(load * r * .018, t, .12); this.turboOsc.frequency.setTargetAtTime(1600 + r * 2600, t, .1);
-    if (gear > this.gear && load > .5) burst(this.b, this.out, t, 'bandpass', 220, 1.5, .18, .1); // upshift thump
-    if (this.prevLoad > .8 && load < .15 && r > .45 && t - this.lastPop > .6) { burst(this.b, this.out, t, 'highpass', 3200, .8, .14, .22); this.lastPop = t; if (Math.random() < .6) burst(this.b, this.out, t + .12, 'bandpass', 380, 1, .22, .08); } // blow-off + backfire
-    this.gear = gear; this.prevLoad = load;
+    if (this.dead) return; const c = this.b.ctx, t = c.currentTime, dt = Math.min(.1, Math.max(.001, t - this.last || .016)); this.last = t; const r = Math.min(1, ratio);
+    let rpm = prpm ?? .22 + r * .7, gear = pgear ?? Math.min(6, 1 + Math.floor(r * 5));
+    this.eng.update({ rpm, load, speed: r, gear }, dt, t);
+    this.screech.gain.setTargetAtTime(slip > .35 ? Math.min(.07, (slip - .35) * .1) : 0, t, .12); this.wind.gain.setTargetAtTime(r * r * .03, t, .2);
   }
-  horn() { const h = HORNS[this.hornId] ?? HORNS.classic; this.beep(h.f, h.dur, .18, h.type); }
+  horn() { const h = HORNS[this.hornId] ?? HORNS.classic; this.beep(h.f, h.dur, .15, h.type); }
   /** severity 0..1 */
   crash(sev = .6) {
     const b = this.b, t = b.ctx.currentTime, s = Math.max(.15, Math.min(1, sev));
-    tone(b, this.out, t, 'sine', 150, 38, .35 + .5 * s, .32); burst(b, this.out, t, 'lowpass', 2400, .8, .5 * s + .15, .4, 300);
-    tone(b, this.out, t, 'square', 310, 300, .06 + .12 * s, .22); tone(b, this.out, t + .015, 'square', 473, 460, .05 + .1 * s, .18); burst(b, this.out, t, 'bandpass', 1300, 3, .22 * s, .3);
-    if (s > .45) for (let i = 0; i < 7; i++) tone(b, this.out, t + .03 + Math.random() * .28, 'sine', 3000 + Math.random() * 3500, 2500, .035 * s, .07); // glass
+    tone(b, this.out, t, 'sine', 140, 40, .25 + .4 * s, .32); burst(b, this.out, t, 'lowpass', 2000, .8, .38 * s + .1, .4, 300);
+    tone(b, this.out, t, 'square', 310, 300, .04 + .09 * s, .22); tone(b, this.out, t + .015, 'square', 473, 460, .035 + .08 * s, .18); burst(b, this.out, t, 'bandpass', 1300, 3, .16 * s, .3);
+    if (s > .45) for (let i = 0; i < 7; i++) tone(b, this.out, t + .03 + Math.random() * .28, 'sine', 3000 + Math.random() * 3500, 2500, .028 * s, .07); // glass
   }
   thud() { this.crash(.45); }
-  scrape(sev = .5) { burst(this.b, this.out, this.b.ctx.currentTime, 'bandpass', 2300, 2.5, .18 * sev + .05, .28, 1500); }
-  whoosh() { burst(this.b, this.out, this.b.ctx.currentTime, 'bandpass', 500, 1.2, .12, .4, 2600); }
-  countdown(n: number) { const t = this.b.ctx.currentTime; if (n > 0) tone(this.b, this.out, t, 'square', 520, 520, .1, .2, .01); else { tone(this.b, this.out, t, 'square', 1040, 1040, .12, .5, .01); tone(this.b, this.out, t, 'sawtooth', 520, 520, .06, .5, .01); } }
-  coin() { const t = this.b.ctx.currentTime; tone(this.b, this.out, t, 'square', 988, 988, .08, .08); tone(this.b, this.out, t + .08, 'square', 1319, 1319, .08, .22); }
+  scrape(sev = .5) { burst(this.b, this.out, this.b.ctx.currentTime, 'bandpass', 2300, 2.5, .14 * sev + .04, .28, 1500); }
+  whoosh() { burst(this.b, this.out, this.b.ctx.currentTime, 'bandpass', 500, 1.2, .1, .4, 2600); }
+  countdown(n: number) { const t = this.b.ctx.currentTime; if (n > 0) tone(this.b, this.out, t, 'square', 520, 520, .08, .2, .01); else { tone(this.b, this.out, t, 'square', 1040, 1040, .1, .5, .01); tone(this.b, this.out, t, 'sawtooth', 520, 520, .05, .5, .01); } }
+  coin() { const t = this.b.ctx.currentTime; tone(this.b, this.out, t, 'square', 988, 988, .06, .08); tone(this.b, this.out, t + .08, 'square', 1319, 1319, .06, .22); }
+  /** Achievement / reward chime */
+  chime() { const t = this.b.ctx.currentTime; [784, 988, 1319, 1568].forEach((f, i) => tone(this.b, this.out, t + i * .08, 'triangle', f, f, .09, .45, .01)); }
   sting(kind: 'over' | 'revive' | 'milestone') {
     const t = this.b.ctx.currentTime, seq = kind === 'over' ? [392, 330, 262, 196] : kind === 'revive' ? [262, 330, 392, 523, 659] : [659, 784, 1047];
-    seq.forEach((f, i) => tone(this.b, this.out, t + i * (kind === 'over' ? .22 : .09), kind === 'over' ? 'sawtooth' : 'triangle', f, f, .1, kind === 'over' ? .5 : .3, .01));
+    seq.forEach((f, i) => tone(this.b, this.out, t + i * (kind === 'over' ? .22 : .09), kind === 'over' ? 'sawtooth' : 'triangle', f, f, .09, kind === 'over' ? .5 : .3, .01));
   }
-  setPaused(p: boolean) { this.out.gain.setTargetAtTime(p ? 0 : 1, this.b.ctx.currentTime, .03); music.duck(p ? .3 : 1); }
-  toggleMute() { const s = getSave().settings, on = !(s.sfx || s.music); setSettings({ sfx: on, music: on }); }
-  isMuted() { return !getSave().settings.sfx; }
+  setPaused(p: boolean) { const t = this.b.ctx.currentTime; this.out.gain.setTargetAtTime(p ? 0 : 1, t, .03); this.carOut.gain.setTargetAtTime(p ? 0 : 1, t, .03); music.duck(p ? .3 : 1); }
+  toggleMute() { toggleMuteAll(); }
   destroy() {
-    if (this.dead) return; this.dead = true; clearInterval(this.timer); const t = this.b.ctx.currentTime; this.out.gain.setTargetAtTime(0, t, .05);
-    setTimeout(() => { this.sources.forEach(s => { try { s.stop(); } catch { /* already stopped */ } }); this.out.disconnect(); }, 400);
+    if (this.dead) return; this.dead = true; clearInterval(this.timer); const t = this.b.ctx.currentTime; this.out.gain.setTargetAtTime(0, t, .05); this.carOut.gain.setTargetAtTime(0, t, .05);
+    setTimeout(() => { this.eng.stop(); this.sources.forEach(s => { try { s.stop(); } catch { /* already stopped */ } }); this.out.disconnect(); this.carOut.disconnect(); }, 400);
   }
+}
+let muteBackup: { music: number; engine: number; radio: number; sfx: number } | null = null;
+/** M key: silence every channel, press again to bring back exactly the levels that were set. */
+export function toggleMuteAll() {
+  const s = getSave().settings;
+  if (s.music + s.engine + s.radio + s.sfx > 0) { muteBackup = { music: s.music, engine: s.engine, radio: s.radio, sfx: s.sfx }; setSettings({ music: 0, engine: 0, radio: 0, sfx: 0 }); }
+  else setSettings(muteBackup ?? { music: .6, engine: .5, radio: .8, sfx: .8 });
+}
+
+/** Menu sounds (sfx channel): taps, back, purchase, reward, error. Silent until the first user gesture unlocks audio. */
+export function uiSound(kind: 'tap' | 'back' | 'buy' | 'reward' | 'error' | 'tick') {
+  try {
+    const b = getBus(); if (b.ctx.state !== 'running') { void b.ctx.resume(); } const t = b.ctx.currentTime, o = b.sfx;
+    if (kind === 'tap') tone(b, o, t, 'triangle', 660, 520, .07, .09, .004);
+    else if (kind === 'tick') tone(b, o, t, 'triangle', 880, 880, .035, .04, .002);
+    else if (kind === 'back') tone(b, o, t, 'triangle', 440, 330, .07, .12, .004);
+    else if (kind === 'error') { tone(b, o, t, 'square', 220, 200, .05, .14, .004); tone(b, o, t + .1, 'square', 180, 160, .05, .16, .004); }
+    else if (kind === 'buy') { tone(b, o, t, 'square', 988, 988, .05, .07); tone(b, o, t + .07, 'square', 1319, 1319, .05, .07); tone(b, o, t + .14, 'square', 1760, 1760, .05, .2); }
+    else [784, 988, 1319, 1568].forEach((f, i) => tone(b, o, t + i * .08, 'triangle', f, f, .08, .45, .01));
+  } catch { /* no audio */ }
 }

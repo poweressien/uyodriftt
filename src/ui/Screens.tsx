@@ -4,9 +4,10 @@ import { DISTRICTS } from '../game/data/districts';
 import { VEHICLES } from '../game/data/vehicles';
 import { VIEWS, VIEW_LABEL } from '../game/data/settings';
 import { requestTilt, hasTilt } from '../game/systems/Controls';
-import { useSave, setSettings, missionView, claimMission, achievementView, topRuns, districtName, Period } from '../state/store';
+import { useSave, setSettings, resetSave, missionView, claimMission, achievementView, topRuns, districtName, Period } from '../state/store';
 import { Header, Coins } from './Bits';
 import { pushPopup } from './Popups';
+import AudioPanel from './AudioPanel';
 
 const Wrap = ({ children }: { children: React.ReactNode }) => <div className="screen">{children}</div>;
 export function Missions({ onBack }: { onBack: () => void }) {
@@ -53,18 +54,20 @@ export function Board({ onBack }: { onBack: () => void }) {
 
 export function SettingsScreen({ onBack }: { onBack: () => void }) {
   const s = useSave(), st = s.settings, coarse = typeof matchMedia !== 'undefined' && matchMedia('(pointer:coarse)').matches;
-  const Row = ({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) => <div className="panel"><div className="cond gold">{label}</div>{hint && <div className="muted" style={{ marginBottom: 6 }}>{hint}</div>}<div className="chips" style={{ justifyContent: 'flex-start' }}>{children}</div></div>;
+  const Card = ({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) => <div className="panel"><div className="cond gold">{label}</div>{hint && <div className="muted" style={{ marginBottom: 8 }}>{hint}</div>}{children}</div>;
   const tilt = async () => { if (await requestTilt()) setSettings({ controls: 'tilt' }); else pushPopup({ kind: 'reward', title: 'Tilt is not available on this device' }); };
   return <Wrap><Header title="SETTINGS" onBack={onBack} />
     <div className="list">
-      <Row label="Steering (touch devices)" hint={hasTilt() ? 'Arrows: on-screen < > buttons. Tilt: turn your phone like a steering wheel; tap the tilt box in a run to re-centre.' : 'Tilt sensor not detected on this device.'}>
-        <button className={`chip${st.controls === 'arrows' ? ' on' : ''}`} onClick={() => setSettings({ controls: 'arrows' })}>Arrows</button>
-        <button className={`chip${st.controls === 'tilt' ? ' on' : ''}`} disabled={!hasTilt()} onClick={tilt}>Tilt</button>
-        {!coarse && <span className="muted">Desktop uses the keyboard. Add ?touch=1 to the address to preview touch controls.</span>}
-      </Row>
-      <Row label="Camera view" hint="Switch any time in a run with the CAM button or the C key.">{VIEWS.map(v => <button key={v} className={`chip${st.view === v ? ' on' : ''}`} onClick={() => setSettings({ view: v })}>{VIEW_LABEL[v]}</button>)}</Row>
-      <Row label="Music"><button className={`chip${st.music ? ' on' : ''}`} onClick={() => setSettings({ music: true })}>On</button><button className={`chip${!st.music ? ' on' : ''}`} onClick={() => setSettings({ music: false })}>Off</button></Row>
-      <Row label="Sound effects & engine"><button className={`chip${st.sfx ? ' on' : ''}`} onClick={() => setSettings({ sfx: true })}>On</button><button className={`chip${!st.sfx ? ' on' : ''}`} onClick={() => setSettings({ sfx: false })}>Off</button></Row>
+      <Card label="Sound" hint="Four separate channels. Set any of them to 0 to switch it off."><AudioPanel /></Card>
+      <Card label="Steering (touch devices)" hint={hasTilt() ? 'Arrows: on-screen < > buttons. Tilt: turn your phone like a steering wheel; tap the tilt box in a run to re-centre.' : 'Tilt sensor not detected on this device.'}>
+        <div className="chips left"><button className={`chip${st.controls === 'arrows' ? ' on' : ''}`} onClick={() => setSettings({ controls: 'arrows' })}>Arrows</button>
+          <button className={`chip${st.controls === 'tilt' ? ' on' : ''}`} disabled={!hasTilt()} onClick={tilt}>Tilt</button></div>
+        {!coarse && <div className="muted" style={{ marginTop: 6 }}>Desktop uses the keyboard. Add ?touch=1 to the address to preview touch controls.</div>}
+        <label className="aud-cap"><input type="checkbox" checked={st.haptics} onChange={e => setSettings({ haptics: e.target.checked })} /> Vibrate on crashes (phones)</label>
+      </Card>
+      <Card label="Camera view" hint="Switch any time in a run with the CAM button or the C key. On touch screens every view turns with the car so left and right always match."><div className="chips left">{VIEWS.map(v => <button key={v} className={`chip${st.view === v ? ' on' : ''}`} onClick={() => setSettings({ view: v })}>{VIEW_LABEL[v]}</button>)}</div></Card>
+      <Card label="Your name" hint="Shown to friends in multiplayer and on challenge links."><input className="txt" maxLength={14} placeholder="Driver" value={st.name} onChange={e => setSettings({ name: e.target.value })} /></Card>
+      <Card label="Saved data" hint="Progress is stored on this device only."><button className="btn danger sm" onClick={() => confirm('Erase all progress on this device? This cannot be undone.') && resetSave()}>Reset progress</button></Card>
     </div>
   </Wrap>;
 }

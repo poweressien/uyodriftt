@@ -21,6 +21,11 @@ const poly = (c: Ctx, pts: number[][]) => { c.beginPath(); pts.forEach(([x, y], 
 /** All art is generated in code: nothing to download, easy to swap for sprites later. Car faces +x. */
 export function makeTextures(s: Phaser.Scene) {
   if (s.textures.exists('car-body')) return;
+  paint(s, 'coin', 40, 40, c => { // gold coin with a raised rim and a naira-style N
+    const g = c.createRadialGradient(15, 14, 2, 20, 20, 19); g.addColorStop(0, '#fff3b0'); g.addColorStop(.55, '#ffc531'); g.addColorStop(1, '#c47a0a'); c.fillStyle = g; c.beginPath(); c.arc(20, 20, 18, 0, 7); c.fill();
+    c.strokeStyle = '#8a5200'; c.lineWidth = 2; c.stroke(); c.strokeStyle = 'rgba(255,255,255,.55)'; c.lineWidth = 1.4; c.beginPath(); c.arc(20, 20, 13.5, 0, 7); c.stroke();
+    c.strokeStyle = '#8a5200'; c.lineWidth = 3; c.lineCap = 'round'; c.lineJoin = 'round'; c.beginPath(); c.moveTo(14, 27); c.lineTo(14, 13); c.lineTo(26, 27); c.lineTo(26, 13); c.stroke(); c.lineWidth = 1.8; c.beginPath(); c.moveTo(11, 18); c.lineTo(29, 18); c.moveTo(11, 22.5); c.lineTo(29, 22.5); c.stroke();
+  });
   // ---- car: shaded greyscale body (tinted to the paint colour at runtime), then untinted gloss / glass / lights on top
   paint(s, 'car-body', 64, 30, c => {
     bodyPath(c); const g = c.createLinearGradient(0, 3, 0, 27);

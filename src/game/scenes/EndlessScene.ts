@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { DISTRICTS, WEATHER_FX, Weather, District, Decor } from '../data/districts';
+import { DISTRICTS, WEATHER_FX, Weather, District, Decor, BUILDINGS, DECOR_EXT, endlessRoad, EndlessRoad } from '../data/districts';
 import { VEHICLES, VehicleStats, toPhysics, KMH, Phys } from '../data/vehicles';
 import { SMOKES } from '../data/progression';
 import { VIEW_LABEL, MAX_CRASHES, reviveCost, View } from '../data/settings';
@@ -15,11 +15,17 @@ import { CameraRig } from '../systems/CameraRig';
 import { boxHit, resolveHit } from '../systems/Collision';
 import { HazardField } from '../systems/Hazards';
 import { ImpactFx } from '../systems/ImpactFx';
-import { tilt } from '../systems/Controls';
-import { getSave, setSettings, spendCoins } from '../../state/store';
+import { tilt, SteerShaper } from '../systems/Controls';
+import { CoinField, COIN_VALUE, COIN_RADIUS } from '../systems/Pickups';
+import { PPM } from '../data/vehicles';
+import { getSave, setSettings, spendCoins, addCoins, grantLive } from '../../state/store';
 
 /** Endless Drive: one dead-straight, never-ending road. Hit 5 cars and it is game over (revive with coins, restart, or menu). Road runs towards -y. */
-const ROAD_W = 440, LANES = 4, LANE_W = ROAD_W / LANES, KERB = 18, SHOULDER = 150, TW = ROAD_W + 2 * (KERB + SHOULDER), WALL = TW / 2 - 12, CHUNK = 1200, KM = 12000, M_PER_PX = 1 / 12, COUNTDOWN = 3.2, UP = -Math.PI / 2;
+const KERB = 18, SHOULDER = 150, CHUNK = 1200, KM = 12000, M_PER_PX = 1 / 12, COUNTDOWN = 3.2, UP = -Math.PI / 2;
+/** Road geometry depends on the chosen road type (2-4 lanes), so these are set once per run. */
+let LANES = 4, ROAD_W = 440, LANE_W = 110, TW = 0, WALL = 0;
+function setGeo(l: number) { LANES = l; LANE_W = 110; ROAD_W = l * LANE_W; TW = ROAD_W + 2 * (KERB + SHOULDER); WALL = TW / 2 - 12; }
+setGeo(4);
 const TINTS = [0x8a8f94, 0x2f4a66, 0xa8281f, 0xe6e6e6, 0x2c6b3e, 0x1d2024, 0x7a5230], laneX = (i: number) => -ROAD_W / 2 + (i + .5) * LANE_W, hex = (n: number) => '#' + n.toString(16).padStart(6, '0');
 type Kind = 'sedan' | 'suv' | 'bus';
 interface ECar { c: Phaser.GameObjects.Container; body: Phaser.GameObjects.Image; brake: Phaser.GameObjects.Image; kind: Kind; l: number; w: number; mass: number; active: boolean; color: number;
@@ -29,7 +35,7 @@ const SPEC: Record<Kind, { l: number; w: number; mass: number }> = { sedan: { l:
 
 export class EndlessScene extends Phaser.Scene {
   constructor() { super('Endless'); }
-  private cfg!: RunConfig; private dist0!: District; private veh!: VehicleStats; private pp!: Phys; private phys!: CarPhysics; private scorer = new DriftScorer(); private weather: Weather = 'sunny';
+  private cfg!: RunConfig; private dist0!: District; private rd!: EndlessRoad; private coinsF!: CoinField; private pickups = 0; private coinT = 1; private achT = 0; private shaper = new SteerShaper(); private veh!: VehicleStats; private pp!: Phys; private phys!: CarPhysics; private scorer = new DriftScorer(); private weather: Weather = 'sunny';
   private car!: Phaser.GameObjects.Container; private carBody!: Phaser.GameObjects.Image; private carBrake!: Phaser.GameObjects.Image; private beam?: Phaser.GameObjects.Image; private ground!: Phaser.GameObjects.TileSprite; private road!: Phaser.GameObjects.TileSprite;
   private smoke!: Phaser.GameObjects.Particles.ParticleEmitter; private rig!: CameraRig; private fx!: ImpactFx; private haz!: HazardField; private audio!: GameAudio; private radio!: Radio;
   private cars: ECar[] = []; private chunks = new Map<number, Phaser.GameObjects.GameObject[]>(); private skids: Phaser.GameObjects.Image[] = []; private skidAge: number[] = []; private skidI = 0;
@@ -40,6 +46,7 @@ export class EndlessScene extends Phaser.Scene {
 
   init(cfg: RunConfig) {
     this.offT = 0; this.fastT = 0; this.shake3 = 0;
+    this.rd = endlessRoad(cfg.road); setGeo(this.rd.lanes); this.pickups = 0; this.coinT = 1; this.achT = 0; this.shaper = new SteerShaper();
     this.cfg = cfg; this.dist0 = DISTRICTS.find(x => x.id === cfg.districtId) ?? DISTRICTS[0]; this.veh = VEHICLES.find(x => x.id === cfg.vehicleId) ?? VEHICLES[0]; this.pp = toPhysics(this.veh, cfg.car.upgrades);
     this.weather = cfg.weather ?? Phaser.Utils.Array.GetRandom(this.dist0.weather); this.scorer = new DriftScorer();
     this.cars = []; this.chunks = new Map(); this.skids = []; this.skidAge = []; this.skidI = 0; this.countdown = COUNTDOWN; this.lastCount = 4; this.paused = false; this.over = false; this.banked = false; this.tiltChecked = false;
@@ -63,11 +70,14 @@ export class EndlessScene extends Phaser.Scene {
     for (const x of [0, TW - 12]) { const g = c.createLinearGradient(x, 0, x + 12, 0); g.addColorStop(0, '#6b7276'); g.addColorStop(.5, '#d7dde0'); g.addColorStop(1, '#6b7276'); c.fillStyle = g; c.fillRect(x, 0, 12, 256); c.fillStyle = '#2c3033'; for (let y = 0; y < 256; y += 64) c.fillRect(x + (x ? -4 : 12), y, 4, 8); }
     t.refresh();
   }
+  private bld: [Decor, number][] = []; private nat: [Decor, number][] = [];
+  private pickW(rr: () => number, list: [Decor, number][]): Decor { const tot = list.reduce((a, [, w]) => a + w, 0); let x = rr() * tot; for (const [k, w] of list) if ((x -= w) < 0) return k; return list[0][0]; }
   private makeChunk(k: number) {
     const out: Phaser.GameObjects.GameObject[] = [], g = this.add.graphics().setDepth(3), r = rng(k * 7919 + this.seed), top = -(k + 1) * CHUNK; out.push(g);
     for (const side of [-1, 1]) {
       for (let i = 0; i < 5; i++) prop(g, 'lamp', side * (WALL + 16), top + i * (CHUNK / 5) + 40, r);
-      for (let i = 0; i < 9; i++) { const kind = this.decorPick(), x = side * (WALL + 70 + r() * (kind === 'house' ? 340 : 230)); prop(g, kind, x, top + r() * CHUNK, r); }
+      if (this.bld.length) for (let i = 0; i < 3; i++) { const kind = this.pickW(r, this.bld), x = side * (WALL + 90 + DECOR_EXT[kind] + r() * 150); prop(g, kind, x, top + (i + .5) * (CHUNK / 3) + (r() - .5) * 70, r); }
+      if (this.nat.length) for (let i = 0; i < 7; i++) { const kind = this.pickW(r, this.nat), near = r() < .45, x = side * (near ? WALL + 48 + r() * 40 : WALL + 250 + r() * 300); prop(g, kind, x, top + r() * CHUNK, r); }
     }
     if (k > 0 && k % (KM / CHUNK) === 0) { // kilometre marker painted across the road
       const y = -k * CHUNK, band = this.add.graphics().setDepth(-2); band.fillStyle(0xffffff, .55).fillRect(-ROAD_W / 2, y - 7, ROAD_W, 14); band.fillStyle(0xff8c1a, .8).fillRect(-ROAD_W / 2, y - 7, ROAD_W, 4);
@@ -84,8 +94,9 @@ export class EndlessScene extends Phaser.Scene {
     const { width: W, height: H } = this.scale, cam = this.cameras.main, pal = this.dist0.palette, look = this.cfg.car;
     const gkey = `grass-${this.dist0.id}`; makeGrass(this, gkey, pal.ground); cam.setBackgroundColor(pal.ground); const GS = Math.ceil(Math.hypot(W, H) * 3);
     this.ground = this.add.tileSprite(0, 0, GS, GS, gkey).setDepth(-10);
-    const rkey = `e-road-${this.dist0.id}`; this.roadTexture(rkey); this.road = this.add.tileSprite(0, 0, TW, GS, rkey).setDepth(-3);
+    const rkey = `e-road-${this.dist0.id}-${LANES}`; this.roadTexture(rkey); this.road = this.add.tileSprite(0, 0, TW, GS, rkey).setDepth(-3);
     const wts = Object.entries(this.dist0.decor) as [Decor, number][], total = wts.reduce((a, [, w]) => a + w, 0), pr = rng(this.seed * 13);
+    this.bld = wts.filter(([k]) => BUILDINGS.includes(k)); this.nat = wts.filter(([k]) => !BUILDINGS.includes(k) && k !== 'lamp');
     this.decorPick = () => { let x = pr() * total; for (const [k, w] of wts) if ((x -= w) < 0) return k; return wts[0][0]; };
 
     this.phys = new CarPhysics({ ...this.pp, steerLock: this.pp.steerLock * .92 }); this.phys.x = laneX(1); this.phys.y = 0; this.phys.heading = UP;
@@ -101,15 +112,15 @@ export class EndlessScene extends Phaser.Scene {
       this.cars.push({ c, body: c.getData('body'), brake: c.getData('brake'), kind, l: sp.l, w: sp.w, mass: sp.mass, active: false, color, x: 0, y: 0, vx: 0, vy: 0, h: UP, spin: 0, base: 150, spd: 150, lane: 0, changeT: 5, hit: false, nm: false, smoke: 0 });
     }
     for (let i = 0; i < 12; i++) this.spawnCar(-400 - i * 290 - Math.random() * 120);
-    this.rig = new CameraRig(cam, { zoomMul: .75, lookMul: 1.1 }); this.rig.snap(this.phys.x, 0, UP); this.updateChunks(0);
-    this.r3d?.setup({ mode: 'endless', dist: this.dist0, weather: this.weather, seed: this.seed, player: { kind: this.veh.kind, color: this.baseColor, decal: look.decal, wheel: WHEEL_TINT[look.wheels], glass: .55 + look.tint * .15 }, traffic: this.cars.map(c => c.kind) });
+    this.touchMode = !!this.registry.get('touchMode'); this.coinsF = new CoinField(this, 70); this.rig = new CameraRig(cam, { zoomMul: .75, lookMul: 1.1, headingUp: this.touchMode }); this.rig.snap(this.phys.x, 0, UP); this.updateChunks(0);
+    this.r3d?.setup({ lanes: LANES, mode: 'endless', dist: this.dist0, weather: this.weather, seed: this.seed, player: { kind: this.veh.kind, color: this.baseColor, decal: look.decal, wheel: WHEEL_TINT[look.wheels], glass: .55 + look.tint * .15 }, traffic: this.cars.map(c => c.kind) });
     this.applyView(getSave().settings.view);
     this.add.rectangle(W / 2, H / 2, W * 3, H * 3, 0x02140b, (1 - vis) * .95).setScrollFactor(0).setDepth(20);
     this.keys = this.input.keyboard!.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT,SPACE,SHIFT,H,M,C,V,R,ENTER,ESC,P') as Record<string, Phaser.Input.Keyboard.Key>;
     this.touch = this.registry.get('touch') as Touch; this.touchMode = !!this.registry.get('touchMode'); this.input.addPointer(3); if (this.touchMode) tilt.start();
     this.registry.set('mode', 'endless'); this.registry.set('weather', this.weather); this.scene.launch('HUD');
     this.audio = new GameAudio(this.weather, look.horn); music.start('endless');
-    this.radio = new Radio(line => { this.game.events.emit('radio', line); if (!this.audio.isMuted()) speak(line); });
+    this.radio = new Radio(line => { const st = getSave().settings; if (st.radioText) this.game.events.emit('radio', line); if (st.radio > 0) speak(line, st.radio); });
     const ev = this.game.events, toggle = () => { this.paused = !this.paused; this.audio.setPaused(this.paused); ev.emit('paused', this.paused); };
     const cycle = () => { const v = this.rig.next(); setSettings({ view: v }); this.applyView(v); ev.emit('toast', `VIEW: ${VIEW_LABEL[v].toUpperCase()}`); };
     const quit = () => { this.bank(); ev.emit('quit'); }, recal = () => tilt.calibrate(), revive = () => this.revive(), restart = () => { this.bank(); this.scene.stop('HUD'); this.scene.restart(this.cfg); }, menu = () => { this.bank(); ev.emit('quit'); };
@@ -127,17 +138,17 @@ export class EndlessScene extends Phaser.Scene {
     while (cs.length < this.cars.length) cs.push({ x: 0, y: 0, h: 0, on: false, brake: false, color: 0, hit: false });
     this.cars.forEach((o, i) => { const c = cs[i]; c.x = o.x; c.y = o.y; c.h = o.h; c.on = o.active; c.brake = o.brake.alpha > .5; c.color = o.color; c.hit = o.hit; });
     const hl = this.haz.draw(); hs.length = hl.length; hl.forEach((h, i) => { const o = hs[i] ?? (hs[i] = { kind: 'cone', x: 0, y: 0, a: 1, s: 1, r: 0 }); o.kind = h.kind; o.x = h.x; o.y = h.y; o.a = h.alpha; o.s = h.scaleX; o.r = h.rotation; });
-    r.frame({ dt, px: P.x, py: P.y, heading: P.heading, vx: P.vx, vy: P.vy, steer: P.delta, ax: P.ax, ay: P.ay, wheelRate: P.wheelRate, brake, ratio: P.speed / this.pp.maxSpeed, dmg: this.dmg, blink: this.inv > 0 && Math.floor(this.inv * 10) % 2 === 1, shake: this.shake3, cars: cs, haz: hs });
+    r.frame({ dt, px: P.x, py: P.y, heading: P.heading, vx: P.vx, vy: P.vy, steer: P.delta, ax: P.ax, ay: P.ay, wheelRate: P.wheelRate, brake, ratio: P.speed / this.pp.maxSpeed, dmg: this.dmg, blink: this.inv > 0 && Math.floor(this.inv * 10) % 2 === 1, shake: this.shake3, cars: cs, haz: hs, coins: this.coinsF.points(P.x, P.y) });
   }
 
   // ------------------------------------------------------------------ traffic
   private laneFree(lane: number, y: number, self?: ECar) { return !this.cars.some(o => o !== self && o.active && Math.abs(o.y - y) < 280 && Math.abs(o.x - laneX(lane)) < LANE_W * .8); }
   private spawnCar(y: number) {
     const free = this.cars.filter(c => !c.active); if (!free.length) return; const lanes = [0, 1, 2, 3].filter(l => this.laneFree(l, y)); if (!lanes.length) return;
-    if (this.cars.filter(o => o.active && Math.abs(o.y - y) < 260).length >= LANES - 2) return;
+    if (this.cars.filter(o => o.active && Math.abs(o.y - y) < 260).length >= Math.max(1, LANES - 2)) return;
     const roll = Math.random(), want: Kind = roll < .6 ? 'sedan' : roll < .88 ? 'suv' : 'bus', c = free.find(f => f.kind === want) ?? free[0], lane = Phaser.Utils.Array.GetRandom(lanes), m = this.dist;
     c.active = true; c.hit = false; c.nm = false; c.smoke = 0; c.lane = lane; c.x = laneX(lane); c.y = y; c.vx = 0; c.h = UP; c.spin = 0; c.changeT = 3 + Math.random() * 6;
-    c.base = (c.kind === 'bus' ? 90 : 110) + Math.random() * (150 + Math.min(130, m / 50)); c.spd = c.base; c.vy = -c.spd; c.color = c.kind === 'bus' ? 0xffb300 : Math.random() < .25 ? 0xffb300 : Phaser.Utils.Array.GetRandom(TINTS);
+    c.base = ((c.kind === 'bus' ? 90 : 110) + Math.random() * (150 + Math.min(130, m / 50))) * this.rd.speed; c.spd = c.base; c.vy = -c.spd; c.color = c.kind === 'bus' ? 0xffb300 : Math.random() < .25 ? 0xffb300 : Phaser.Utils.Array.GetRandom(TINTS);
     c.body.setTint(c.color); c.brake.setAlpha(0); c.c.setVisible(true).setPosition(c.x, c.y).setRotation(c.h).setAlpha(1);
   }
   private drive(c: ECar, dt: number) {
@@ -172,8 +183,17 @@ export class EndlessScene extends Phaser.Scene {
   }
   private bank() {
     if (this.banked || this.score <= 0) return; this.banked = true;
-    const r: RunResult = { districtId: this.dist0.id, vehicleId: this.veh.id, weather: this.weather, points: this.score, durationSec: Math.round(this.elapsed), maxCombo: this.maxStreak, drifts: this.scorer.drifts, topSpeed: Math.round(this.scorer.topSpeed * KMH), clean: false, cleanBonus: 0, laps: 0, mode: 'endless', distance: this.dist, crashes: this.totalCrashes, revives: this.revives, nearMisses: this.nmCount };
+    const r: RunResult = { districtId: this.dist0.id, vehicleId: this.veh.id, weather: this.weather, points: this.score, durationSec: Math.round(this.elapsed), maxCombo: this.maxStreak, drifts: this.scorer.drifts, topSpeed: Math.round(this.scorer.topSpeed * KMH), clean: false, cleanBonus: 0, laps: 0, mode: 'endless', distance: this.dist, crashes: this.totalCrashes, revives: this.revives, nearMisses: this.nmCount, pickups: this.pickups, distanceM: this.dist, road: this.rd.id };
     this.game.events.emit('bank', r);
+  }
+  private spawnCoins(y: number) {
+    const lanes = [0, 1, 2, 3].filter(l => l < LANES), free = lanes.filter(l => this.laneFree(l, y)), pool = free.length ? free : lanes, lane = Phaser.Utils.Array.GetRandom(pool);
+    for (let i = 0; i < 5; i++) this.coinsF.place(laneX(lane), y - i * 70);
+  }
+  private gotCoin() { this.pickups++; addCoins(COIN_VALUE); this.audio.coin(); this.game.events.emit('coin', this.pickups * COIN_VALUE); if (this.pickups % 10 === 0) this.radio.say('pickup'); }
+  private liveAch() {
+    const got = grantLive({ mode: 'endless', points: this.score, maxCombo: this.maxStreak, topSpeed: Math.round(this.scorer.topSpeed * KMH), distanceM: this.dist, drifts: this.scorer.drifts, pickups: this.pickups, nearMisses: this.nmCount, laps: 0 });
+    got.forEach(a => { this.game.events.emit('achievement', a); this.audio.chime(); this.radio.say('achievement'); });
   }
   private near() { this.nmCount++; this.nmStreak = Math.min(10, this.nmStreak + 1); this.maxStreak = Math.max(this.maxStreak, this.nmStreak); this.nmT = 4; const pts = 100 * this.nmStreak; this.scorer.bonus(pts); this.audio.whoosh(); this.game.events.emit('nearmiss', pts); this.radio.say(this.nmStreak >= 4 ? 'streak' : 'nearmiss'); }
   private skid(x: number, y: number, rot: number) { const i = this.skidI++ % this.skids.length; this.skids[i].setPosition(x, y).setRotation(rot).setAlpha(.5).setVisible(true); this.skidAge[i] = 0; }
@@ -196,6 +216,7 @@ export class EndlessScene extends Phaser.Scene {
     const t = this.touch, set = getSave().settings, left = k.A.isDown || k.LEFT.isDown || t.left, right = k.D.isDown || k.RIGHT.isDown || t.right, drive = !this.over;
     const brake = !drive || k.S.isDown || k.DOWN.isDown || t.brake, throttle = drive && (k.W.isDown || k.UP.isDown || (this.touchMode && !brake)) ? 1 : 0, hand = drive && (k.SPACE.isDown || k.SHIFT.isDown || t.hand);
     let steer = drive ? (right ? 1 : 0) - (left ? 1 : 0) : 0; if (drive && this.touchMode && set.controls === 'tilt') steer = Phaser.Math.Clamp(steer + tilt.value, -1, 1);
+    if (this.touchMode && !this.r3d?.active) steer = this.shaper.step(steer, dt, P.speed / this.pp.maxSpeed, set.controls === 'tilt'); else this.shaper.reset();
     if (!this.tiltChecked && this.countdown < -1.5) { this.tiltChecked = true; if (this.touchMode && set.controls === 'tilt' && !tilt.got) this.game.events.emit('toast', 'NO TILT SENSOR - SWITCH TO ARROWS IN PAUSE MENU'); }
     if (Phaser.Input.Keyboard.JustDown(k.H)) this.audio.horn(); if (Phaser.Input.Keyboard.JustDown(k.M)) this.audio.toggleMute();
 
@@ -220,7 +241,7 @@ export class EndlessScene extends Phaser.Scene {
     if (this.nmStreak > 0 && (this.nmT -= dt) <= 0) this.nmStreak = 0;
 
     // traffic
-    const pBox = { x: P.x, y: P.y, h: P.heading, l: this.pl - 3, w: this.pw - 3 }, want = Math.min(24, 12 + Math.floor(this.dist / 400));
+    const pBox = { x: P.x, y: P.y, h: P.heading, l: this.pl - 3, w: this.pw - 3 }, want = Math.max(4, Math.round(Math.min(24, 12 + Math.floor(this.dist / 400)) * this.rd.traffic));
     let live = 0; for (const o of this.cars) if (o.active) live++;
     for (const o of this.cars) {
       if (!o.active) continue; this.drive(o, dt); o.c.setPosition(o.x, o.y).setRotation(o.h);
@@ -236,13 +257,17 @@ export class EndlessScene extends Phaser.Scene {
       } else if (dy > 200) o.nm = false;
     }
     if (live < want && Math.random() < dt * 3) this.spawnCar(P.y - 2300 - Math.random() * 1200);
-    this.nextHaz -= dt; if (this.nextHaz <= 0) { this.nextHaz = 3 + Math.random() * 3; const kind = Phaser.Utils.Array.GetRandom(['pothole', 'cone', 'flood'] as const), x = Phaser.Math.Between(-ROAD_W / 2 + 40, ROAD_W / 2 - 40), y = P.y - 2300 - Math.random() * 1000;
+    this.nextHaz -= dt; if (this.nextHaz <= 0) { this.nextHaz = (3 + Math.random() * 3) / this.rd.hazards; const kind = Phaser.Utils.Array.GetRandom(['pothole', 'cone', 'flood'] as const), x = Phaser.Math.Between(-ROAD_W / 2 + 40, ROAD_W / 2 - 40), y = P.y - 2300 - Math.random() * 1000;
       if (kind === 'cone') for (let i = 0; i < 3; i++) this.haz.add(kind, x + (i - 1) * 24, y - i * 20); else this.haz.add(kind, x, y); }
     if (!this.over) this.haz.update(P.x, P.y, speed, { onFlood: () => { P.bump(.985); this.radio.say('flood'); }, onNear: () => this.near(), onHit: (kind, h) => { P.bump(kind === 'cone' ? .78 : .62); this.crashFx(kind === 'cone' ? .3 : .25, h.x, h.y, kind === 'cone' ? 0xff8c1a : 0x4a3a2a, false, kind === 'cone' ? 'cone' : 'pothole'); } }, 4600);
 
     this.audio.update(ratio, Math.min(1, Math.abs(P.vl) / 170), throttle, P.rpm, P.gear); this.radio.tick(dt); this.draw3d(dt, brake);
+    this.coinsF.animate(this.time.now); this.coinsF.collect(P.x, P.y, COIN_RADIUS, () => this.gotCoin());
+    for (const c of this.coinsF.list) if (c.on && c.y > P.y + 700) this.coinsF.remove(c);
+    if ((this.coinT -= dt) <= 0) { this.coinT = .8 + Math.random() * .9; this.spawnCoins(P.y - 1900 - Math.random() * 900); }
+    if ((this.achT -= dt) <= 0) { this.achT = 1; this.liveAch(); }
     this.musT -= dt; if (this.musT <= 0) { this.musT = .4; music.setIntensity(.3 + Math.min(1, ratio) * .7); }
     view.update(dt, P.x, P.y, P.heading, P.vx, P.vy, ratio);
-    this.hudT += dt; if (this.hudT > .05) { this.hudT = 0; this.game.events.emit('stats', { score: this.score, combo: Math.max(1, this.nmStreak), speed: Math.round(speed * KMH), dist: this.dist, crashes: this.crashes, max: MAX_CRASHES, best: Math.max(getSave().stats.endless_best_m, this.dist), live: this.scorer.live, off }); }
+    this.hudT += dt; if (this.hudT > .05) { this.hudT = 0; this.game.events.emit('stats', { coins: this.pickups * COIN_VALUE, score: this.score, combo: Math.max(1, this.nmStreak), speed: Math.round(speed * KMH), dist: this.dist, crashes: this.crashes, max: MAX_CRASHES, best: Math.max(getSave().stats.endless_best_m, this.dist), live: this.scorer.live, off }); }
   }
 }

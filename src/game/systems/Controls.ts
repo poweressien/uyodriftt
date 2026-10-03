@@ -35,3 +35,14 @@ class Tilt {
   calibrate() { this.neutral = this.raw; this.value = 0; }
 }
 export const tilt = new Tilt();
+
+/** Touch steering shaper for the 2D camera views: eases the arrow buttons in and out and reduces lock at speed so a thumb can feather the turn. 3D view is left untouched. */
+export class SteerShaper {
+  private v = 0;
+  reset() { this.v = 0; }
+  /** raw: -1..1 from buttons (digital) or tilt (analog). */
+  step(raw: number, dt: number, speedRatio: number, analog: boolean) {
+    const target = raw * (1 - .35 * Math.min(1, speedRatio)), rate = Math.abs(target) > Math.abs(this.v) ? (analog ? 14 : 6) : (analog ? 14 : 10);
+    this.v += (target - this.v) * Math.min(1, dt * rate); if (Math.abs(this.v) < .003) this.v = 0; return this.v;
+  }
+}
