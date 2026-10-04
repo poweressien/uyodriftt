@@ -62,7 +62,7 @@ export class EndlessScene extends Phaser.Scene {
     if (this.textures.exists(key)) return; const pal = this.dist0.palette, t = this.textures.createCanvas(key, TW, 256)!, c = t.getContext(), r = rng(99);
     c.fillStyle = hex(pal.shoulder); c.fillRect(0, 0, TW, 256); for (let i = 0; i < 700; i++) { c.fillStyle = r() < .5 ? 'rgba(0,0,0,.1)' : 'rgba(255,255,255,.07)'; c.fillRect(r() * TW, r() * 256, 2 + r() * 3, 2 + r() * 3); }
     const a0 = SHOULDER + KERB, a1 = a0 + ROAD_W;
-    for (let y = 0; y < 256; y += 32) for (const x of [SHOULDER, a1]) { c.fillStyle = (y / 32) % 2 ? '#ffffff' : '#ff8c1a'; c.fillRect(x, y, KERB, 32); }
+    for (let y = 0; y < 256; y += 32) for (const x of [SHOULDER, a1]) { c.fillStyle = (y / 32) % 2 ? '#ffffff' : '#e0233a'; c.fillRect(x, y, KERB, 32); }
     c.fillStyle = hex(pal.road); c.fillRect(a0, 0, ROAD_W, 256); for (let i = 0; i < 1400; i++) { c.fillStyle = r() < .5 ? 'rgba(0,0,0,.14)' : 'rgba(255,255,255,.05)'; c.fillRect(a0 + r() * ROAD_W, r() * 256, 1 + r() * 2, 1 + r() * 2); }
     c.fillStyle = 'rgba(0,0,0,.1)'; for (let l = 0; l < LANES; l++) for (const o of [-22, 22]) c.fillRect(a0 + (l + .5) * LANE_W + o - 7, 0, 14, 256); // tyre wear
     c.fillStyle = 'rgba(255,255,255,.88)'; c.fillRect(a0 + 12, 0, 5, 256); c.fillRect(a1 - 17, 0, 5, 256);
@@ -81,7 +81,7 @@ export class EndlessScene extends Phaser.Scene {
     }
     if (k > 0 && k % (KM / CHUNK) === 0) { // kilometre marker painted across the road
       const y = -k * CHUNK, band = this.add.graphics().setDepth(-2); band.fillStyle(0xffffff, .55).fillRect(-ROAD_W / 2, y - 7, ROAD_W, 14); band.fillStyle(0xff8c1a, .8).fillRect(-ROAD_W / 2, y - 7, ROAD_W, 4);
-      out.push(band, this.add.text(0, y - 70, `${k / (KM / CHUNK)} KM`, { fontFamily: 'Anton, Impact, sans-serif', fontSize: '84px', color: '#ffffff' }).setOrigin(.5).setAlpha(.5).setDepth(-1.5));
+      out.push(band, this.add.text(0, y - 70, `${k / (KM / CHUNK)} KM`, { fontFamily: 'Orbitron, sans-serif', fontSize: '84px', color: '#ffffff' }).setOrigin(.5).setAlpha(.5).setDepth(-1.5));
     }
     this.chunks.set(k, out);
   }
@@ -216,13 +216,13 @@ export class EndlessScene extends Phaser.Scene {
     const t = this.touch, set = getSave().settings, left = k.A.isDown || k.LEFT.isDown || t.left, right = k.D.isDown || k.RIGHT.isDown || t.right, drive = !this.over;
     const brake = !drive || k.S.isDown || k.DOWN.isDown || t.brake, throttle = drive && (k.W.isDown || k.UP.isDown || (this.touchMode && !brake)) ? 1 : 0, hand = drive && (k.SPACE.isDown || k.SHIFT.isDown || t.hand);
     let steer = drive ? (right ? 1 : 0) - (left ? 1 : 0) : 0; if (drive && this.touchMode && set.controls === 'tilt') steer = Phaser.Math.Clamp(steer + tilt.value, -1, 1);
-    if (this.touchMode && !this.r3d?.active) steer = this.shaper.step(steer, dt, P.speed / this.pp.maxSpeed, set.controls === 'tilt'); else this.shaper.reset();
+    steer = this.shaper.step(steer, dt, P.speed / this.pp.maxSpeed, this.touchMode && set.controls === 'tilt'); // same ramp for keys / arrows / tilt in every view
     if (!this.tiltChecked && this.countdown < -1.5) { this.tiltChecked = true; if (this.touchMode && set.controls === 'tilt' && !tilt.got) this.game.events.emit('toast', 'NO TILT SENSOR - SWITCH TO ARROWS IN PAUSE MENU'); }
     if (Phaser.Input.Keyboard.JustDown(k.H)) this.audio.horn(); if (Phaser.Input.Keyboard.JustDown(k.M)) this.audio.toggleMute();
 
     // keep the car pointing down the road: self-centring when not steering, hard limit at ~57 degrees
     const ratio = P.speed / this.pp.maxSpeed; let dh = Phaser.Math.Angle.Wrap(P.heading - UP);
-    if (!hand && steer === 0) P.heading -= dh * Math.min(1, dt * (1.1 + ratio * .9));
+    if (!hand && Math.abs(steer) < .02 && P.slipDeg < 8) P.heading -= dh * Math.min(1, dt * (.8 + ratio * .6)); // gentle, only when the car is already tracking straight (never fights a slide)
     dh = Phaser.Math.Angle.Wrap(P.heading - UP); if (Math.abs(dh) > 1) { P.heading = UP + Math.sign(dh); P.w *= .2; }
     const off = Math.abs(P.x) > ROAD_W / 2 + KERB; P.step(dt, { throttle, brake, steer, hand }, off, WEATHER_FX[this.weather].grip);
     const lim = WALL - 16; // guard-rail

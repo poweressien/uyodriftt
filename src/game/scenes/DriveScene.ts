@@ -61,7 +61,7 @@ export class DriveScene extends Phaser.Scene {
     // start / finish: chequered line + road paint
     const p0 = t.pts[0], n0 = t.nrm[0], tg = t.tan[0], sg = this.add.graphics().setDepth(-0.9);
     for (let row = 0; row < 2; row++) for (let k = -Math.floor(t.width / 40); k < Math.floor(t.width / 40); k++) { sg.fillStyle((k + row) % 2 ? 0x111111 : 0xffffff, .95); const cx = p0.x + n0.x * (k * 20 + 10) + tg.x * (row * 20 - 10), cy = p0.y + n0.y * (k * 20 + 10) + tg.y * (row * 20 - 10); sg.fillPoints([{ x: cx - 10 * n0.x - 10 * tg.x, y: cy - 10 * n0.y - 10 * tg.y }, { x: cx + 10 * n0.x - 10 * tg.x, y: cy + 10 * n0.y - 10 * tg.y }, { x: cx + 10 * n0.x + 10 * tg.x, y: cy + 10 * n0.y + 10 * tg.y }, { x: cx - 10 * n0.x + 10 * tg.x, y: cy - 10 * n0.y + 10 * tg.y }], true); }
-    this.add.text(p0.x + tg.x * 260, p0.y + tg.y * 260, this.dist.name.toUpperCase(), { fontFamily: 'Anton, Impact, sans-serif', fontSize: '64px', color: '#ffffff' }).setOrigin(.5).setRotation(Math.atan2(tg.y, tg.x)).setAlpha(.3).setDepth(-0.8);
+    this.add.text(p0.x + tg.x * 260, p0.y + tg.y * 260, this.dist.name.toUpperCase(), { fontFamily: 'Orbitron, sans-serif', fontSize: '64px', color: '#ffffff' }).setOrigin(.5).setRotation(Math.atan2(tg.y, tg.x)).setAlpha(.3).setDepth(-0.8);
 
     const s = t.pts[4]; this.phys = new CarPhysics(this.pp); this.phys.x = s.x; this.phys.y = s.y; this.phys.heading = Math.atan2(t.tan[4].y, t.tan[4].x);
     this.baseColor = look.paint ? parseInt(look.paint.slice(1), 16) : this.veh.color;
@@ -162,7 +162,7 @@ export class DriveScene extends Phaser.Scene {
     const t = this.touch, set = getSave().settings, left = k.A.isDown || k.LEFT.isDown || t.left, right = k.D.isDown || k.RIGHT.isDown || t.right, brake = k.S.isDown || k.DOWN.isDown || t.brake;
     const throttle = k.W.isDown || k.UP.isDown || (this.touchMode && !brake) ? 1 : 0, hand = k.SPACE.isDown || k.SHIFT.isDown || t.hand;
     let steer = (right ? 1 : 0) - (left ? 1 : 0); if (this.touchMode && set.controls === 'tilt') steer = Math.max(-1, Math.min(1, steer + tilt.value));
-    if (this.touchMode && !this.r3d?.active) steer = this.shaper.step(steer, dt, this.phys.speed / this.pp.maxSpeed, set.controls === 'tilt'); else this.shaper.reset(); // 2D views only; the 3D view already feels right
+    steer = this.shaper.step(steer, dt, this.phys.speed / this.pp.maxSpeed, this.touchMode && set.controls === 'tilt'); // same ramp for keys / arrows / tilt in every view
     if (!this.tiltChecked && this.countdown < -1.5) { this.tiltChecked = true; if (this.touchMode && set.controls === 'tilt' && !tilt.got) this.game.events.emit('toast', 'NO TILT SENSOR - SWITCH TO ARROWS IN PAUSE MENU'); }
     if (Phaser.Input.Keyboard.JustDown(k.H)) this.audio.horn(); if (Phaser.Input.Keyboard.JustDown(k.M)) this.audio.toggleMute();
 

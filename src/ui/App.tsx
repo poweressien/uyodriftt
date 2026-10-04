@@ -7,7 +7,7 @@ import { music, unlockAudio, uiSound } from '../game/systems/Audio';
 import { requestTilt } from '../game/systems/Controls';
 import { MpSession, parseInvite } from '../game/systems/Net';
 import { useSave, select, setSettings, finishRun, parseChallenge, makeChallengeLink, getSave, logChallenge, playerName, Outcome } from '../state/store';
-import { Skyline } from './Bits';
+
 import { PopupHost, pushPopup } from './Popups';
 import Garage from './Garage';
 import Menu, { type Go } from './Menu';
@@ -76,18 +76,18 @@ export default function App() {
   const tap = (e: React.MouseEvent) => { const el = (e.target as HTMLElement).closest('button'); if (el && !el.disabled && !el.classList.contains('quiet')) uiSound('tap'); };
 
   if (screen === 'running') return (
-    <><PopupHost /><div ref={mount} style={{ position: 'absolute', inset: 0, background: '#031a0f' }} />{loading && <div className="loading">LOADING UYO...</div>}
+    <><PopupHost /><div ref={mount} style={{ position: 'absolute', inset: 0, background: '#04060c' }} />{loading && <div className="loading">LOADING UYO...</div>}
       {coarse && <div className="rotate">Turn your phone sideways to play</div>}
       {paused && <PauseMenu live={!!mpStart && !!session} touch={coarse} onResume={() => gameRef.current?.events.emit('pause-toggle')} onCam={() => gameRef.current?.events.emit('cam-next')} onRestart={mpStart ? undefined : () => { setPaused(false); gameRef.current?.events.emit('quit-req'); setTimeout(() => void startRun(), 60); }} onQuit={leaveRun} />}</>
   );
   if (screen === 'goodbye') return (
-    <><div className="bg" /><Skyline /><div className="screen" style={{ justifyContent: 'center', textAlign: 'center' }}><h1 className="logo"><span>UYO</span><em>DRIFT</em></h1><div className="tag">Thanks for playing. E don do for today!</div>
+    <><div className="bg" /><div className="screen" style={{ justifyContent: 'center', textAlign: 'center' }}><h1 className="logo"><span>UYO</span><em>DRIFT</em></h1><div className="tag">Thanks for playing. E don do for today!</div>
       <div className="muted">Your progress is saved on this device. You can close this tab now.</div><div className="chips"><button className="btn primary" onClick={() => { go('menu'); }}>Back to game</button><button className="btn" onClick={() => { window.close(); }}>Close tab</button></div></div></>
   );
   const d = res?.r, mpRes = d?.mp;
   return (
     <div onClick={tap}><PopupHost />
-      {screen === 'menu' ? <Menu s={s} onNav={nav} challenge={challenge} clearChallenge={() => setChallenge(null)} /> : <><div className="bg" /><Skyline />
+      {screen === 'menu' ? <Menu s={s} onNav={nav} challenge={challenge} clearChallenge={() => setChallenge(null)} /> : <><div className="bg" />
         {screen === 'play' && <PlayScreen onBack={back} onStart={() => void startRun()} onGarage={() => go('garage')} />}
         {screen === 'results' && d && res && <div className="screen" style={{ justifyContent: 'center' }}>
           <div className="tag">{DISTRICTS.find(x => x.id === d.districtId)!.name} &middot; run complete</div>

@@ -12,8 +12,8 @@ export class Hero3D {
     r.domElement.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:pan-y;cursor:grab'; host.appendChild(r.domElement);
     this.scene.environment = makeEnvironment(r); (this.scene as any).environmentIntensity = .62;
     const glow = (rad: number, col: number, op: number) => { const m = new THREE.Mesh(new THREE.CircleGeometry(rad, 48), new THREE.MeshBasicMaterial({ map: radial(), color: col, transparent: true, opacity: op, blending: THREE.AdditiveBlending, depthWrite: false })); m.rotation.x = -Math.PI / 2; m.position.y = .01; this.scene.add(m); };
-    glow(6.5, 0xff8c1a, .22); glow(4.2, 0x2fd06a, .1);
-    for (const [ri, col, w] of [[3.55, 0xff8c1a, .06], [4.35, 0x2fd06a, .035], [5.6, 0xffffff, .015]] as const) { const m = new THREE.Mesh(new THREE.RingGeometry(ri, ri + w, 128), new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: .95, blending: THREE.AdditiveBlending, depthWrite: false })); m.rotation.x = -Math.PI / 2; m.position.y = .015; this.scene.add(m); this.rings.push(m); }
+    glow(6.5, 0x19d3ff, .22); glow(4.2, 0x2b7bff, .1);
+    for (const [ri, col, w] of [[3.55, 0x19d3ff, .06], [4.35, 0x2b7bff, .035], [5.6, 0xffffff, .015]] as const) { const m = new THREE.Mesh(new THREE.RingGeometry(ri, ri + w, 128), new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: .95, blending: THREE.AdditiveBlending, depthWrite: false })); m.rotation.x = -Math.PI / 2; m.position.y = .015; this.scene.add(m); this.rings.push(m); }
     this.scene.add(new THREE.HemisphereLight(0xb7c8ff, 0x1b0f05, .35));
     const key = new THREE.SpotLight(0xffd2a0, 260, 30, .7, .6, 1.4); key.position.set(-6, 8, 6); key.target.position.set(0, .8, 0); const rim = new THREE.SpotLight(0xff7a18, 380, 30, .6, .5, 1.4); rim.position.set(7, 4, -6); rim.target.position.set(0, .8, 0);
     const rim2 = new THREE.SpotLight(0x35e08a, 220, 30, .6, .5, 1.4); rim2.position.set(-7, 3, -5); rim2.target.position.set(0, .8, 0); this.scene.add(key, key.target, rim, rim.target, rim2, rim2.target);

@@ -49,3 +49,8 @@ Touch: auto-throttle. Arrows or Tilt steering, BRAKE, DRIFT (handbrake), CAM. Pr
 - Nigerian roadside buildings (bungalow, face-me-I-face-you, duplex, kiosk, church, plaza, filling station) replace flags/billboards.
 - Economy: coins on the road, 11 cars, upgrades, sell car, daily streak, 13 career events, many achievements.
 - Multiplayer: challenge links, serverless WebRTC live race (swap two codes; no global lobby).
+
+## v4.2
+- Handling retuned (more grip and steering lock at speed, quicker steering ramp): turn radius at 120 km/h went from 83 m to 36 m.
+- New turbo-racing UI: dark carbon, electric cyan and hot red, chamfered panels, slanted buttons, Orbitron + Saira type (bundled, works offline).
+- Night view of the Ibom Plaza roundabout as the home screen, START button, tabbed Settings, restyled HUD and touch controls.

@@ -28,7 +28,7 @@ export class CameraRig {
   }
   update(dt: number, x: number, y: number, heading: number, vx: number, vy: number, speedRatio: number) {
     const p = this.preset(), k = (r: number) => Math.min(1, dt * r), la = Math.min(1, speedRatio);
-    this.rot += Phaser.Math.Angle.Wrap((p.rotate ? -Math.PI / 2 - heading : 0) - this.rot) * k(3.4);
+    this.rot += Phaser.Math.Angle.Wrap((p.rotate ? -Math.PI / 2 - heading : 0) - this.rot) * k(6.5); // tight enough that the world turns with the car instead of lagging behind the steering
     this.zoom += ((p.zoom - p.drop * la * p.zoom) * (this.o.zoomMul ?? 1) - this.zoom) * k(2.2);
     if (p.rotate) { // push the car towards the bottom of the screen so the road ahead is visible
       const s = (p.shift + la * 70) / this.zoom; this.lx = -Math.sin(this.rot) * s; this.ly = -Math.cos(this.rot) * s;

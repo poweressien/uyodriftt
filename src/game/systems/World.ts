@@ -93,7 +93,7 @@ export function buildWorld(s: Phaser.Scene, t: Track, layout: Layout, d: Distric
     const line = (off: number) => idx.map(k => new Phaser.Math.Vector2(t.pts[k].x + t.nrm[k].x * off, t.pts[k].y + t.nrm[k].y * off));
     const mid = line(0);
     c.shoulder.lineStyle(W + 130, pal.shoulder, .9).strokePoints(mid, false, false);
-    c.kerb.lineStyle(W + 24, 0xffffff, 1).strokePoints(mid, false, false); c.kerb.lineStyle(W + 24, 0xff8c1a, 1);
+    c.kerb.lineStyle(W + 24, 0xffffff, 1).strokePoints(mid, false, false); c.kerb.lineStyle(W + 24, 0xe0233a, 1);
     for (let k = 0; k < mid.length - 1; k++) if (k % 4 < 2) c.kerb.lineBetween(mid[k].x, mid[k].y, mid[k + 1].x, mid[k + 1].y);
     c.road.lineStyle(W, pal.road, 1).strokePoints(mid, false, false);
     c.road.lineStyle(5, 0xffffff, .85).strokePoints(line(W / 2 - 16), false, false).strokePoints(line(-(W / 2 - 16)), false, false);

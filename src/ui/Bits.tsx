@@ -4,22 +4,9 @@ import { LAYOUTS } from '../game/data/layouts';
 import { RANKS, rankFor } from '../game/data/progression';
 import type { Save } from '../state/store';
 
-export function Skyline() {
-  return (
-    <svg className="sky" viewBox="0 0 1440 260" preserveAspectRatio="xMidYMax slice" aria-hidden>
-      <defs><linearGradient id="sun" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#ffb347" /><stop offset="1" stopColor="#ff7a00" /></linearGradient>
-        <symbol id="palm" viewBox="-60 -140 120 200"><path d="M0 60C4 10 8-50 0-90" stroke="currentColor" strokeWidth="7" fill="none" /><path d="M0-90L-55-70-20-84-58-40-12-80 0-125 12-80 58-40 20-84 55-70Z" fill="currentColor" /></symbol></defs>
-      <circle cx="720" cy="235" r="160" fill="url(#sun)" opacity=".5" />
-      <path d="M0 260V190C200 170 340 200 520 185S900 160 1100 190 1340 175 1440 185V260Z" fill="#06331d" />
-      <g fill="#04220f"><path d="M130 260V222Q290 168 450 222V260Z" /><path d="M1080 260V96h46v164Z" /><rect x="1070" y="88" width="66" height="10" fill="#ff8c1a" /><rect x="1150" y="150" width="60" height="110" /><rect x="1220" y="170" width="46" height="90" /></g>
-      <path d="M170 222Q290 150 410 222" stroke="#ff8c1a" strokeWidth="5" fill="none" opacity=".85" /><path d="M200 222Q290 170 380 222" stroke="#fff" strokeWidth="3" fill="none" opacity=".6" />
-      {[[40, 120, 110], [540, 140, 95], [640, 150, 80], [900, 130, 105], [1300, 115, 115], [1380, 145, 90]].map(([x, y, w], i) => <use key={i} href="#palm" x={x} y={y} width={w} height={w * 1.65} style={{ color: '#04220f' }} />)}
-      <path d="M0 260V238H1440V260Z" fill="#031a0f" />
-    </svg>
-  );
-}
+export const Skyline = () => null;
 export const Header = ({ title, onBack, right }: { title: string; onBack: () => void; right?: ReactNode }) =>
-  <div className="hdr"><div><button className="btn sm" onClick={onBack}>&larr; Back</button></div><h2>{title}</h2><div className="coins">{right}</div></div>;
+  <div className="hdr"><div><button className="btn sm" onClick={onBack}>&larr; Back</button></div><h2>{title}</h2><div style={{ justifySelf: 'end' }}>{right && <div className="coins">{right}</div>}</div></div>;
 export const Coins = ({ s }: { s: Save }) => <><i className="coin" />{s.coins.toLocaleString()} <small>· {s.parts} parts</small></>;
 export function RankChip({ s }: { s: Save }) {
   const r = rankFor(s.xp), next = RANKS[r + 1], pct = next ? Math.min(100, ((s.xp - RANKS[r].xp) / (next.xp - RANKS[r].xp)) * 100) : 100;
@@ -29,7 +16,7 @@ export function RankChip({ s }: { s: Save }) {
 export function MiniMap({ id }: { id: string }) {
   const t = buildTrack(LAYOUTS[id]), pts = t.pts.filter((_, i) => i % 3 === 0), xs = pts.map(p => p.x), ys = pts.map(p => p.y), x0 = Math.min(...xs), y0 = Math.min(...ys), w = Math.max(...xs) - x0 || 1, h = Math.max(...ys) - y0 || 1, k = Math.min(200 / w, 54 / h), ox = (220 - w * k) / 2, oy = (62 - h * k) / 2;
   const d = pts.map((p, i) => `${i ? 'L' : 'M'}${((p.x - x0) * k + ox).toFixed(1)} ${((p.y - y0) * k + oy).toFixed(1)}`).join('') + 'Z';
-  return <svg viewBox="0 0 220 62"><path d={d} fill="none" stroke="#ff8c1a" strokeWidth="9" strokeLinejoin="round" opacity=".45" /><path d={d} fill="none" stroke="#fff" strokeWidth="4" strokeLinejoin="round" /></svg>;
+  return <svg viewBox="0 0 220 62"><path d={d} fill="none" stroke="#19d3ff" strokeWidth="9" strokeLinejoin="round" opacity=".35" /><path d={d} fill="none" stroke="#fff" strokeWidth="4" strokeLinejoin="round" /></svg>;
 }
 export function CarSvg({ color, decal, tint, wheel, width = 260 }: { color: string; decal: string; tint: number; wheel: string; width?: number }) {
   const g = .55 + tint * .15, id = 'c' + color.slice(1) + decal;

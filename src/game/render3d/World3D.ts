@@ -22,7 +22,7 @@ export function roadTexture(s: RoadSpec) {
   const TW = s.roadW + 2 * (s.kerbW + s.shoulderW), r = rng(5), laneW = s.roadW / s.lanes, a0 = s.shoulderW + s.kerbW, a1 = a0 + s.roadW;
   const t = canvasTex(TW, 256, g => {
     g.fillStyle = hex(s.shoulder); g.fillRect(0, 0, TW, 256); for (let i = 0; i < TW * 1.2; i++) { g.fillStyle = r() < .5 ? 'rgba(0,0,0,.1)' : 'rgba(255,255,255,.07)'; g.fillRect(r() * TW, r() * 256, 2 + r() * 3, 2 + r() * 3); }
-    for (let y = 0; y < 256; y += 32) for (const x of [s.shoulderW, a1]) { g.fillStyle = (y / 32) % 2 ? '#ffffff' : '#ff8c1a'; g.fillRect(x, y, s.kerbW, 32); }
+    for (let y = 0; y < 256; y += 32) for (const x of [s.shoulderW, a1]) { g.fillStyle = (y / 32) % 2 ? '#ffffff' : '#e0233a'; g.fillRect(x, y, s.kerbW, 32); }
     g.fillStyle = hex(s.road); g.fillRect(a0, 0, s.roadW, 256); for (let i = 0; i < s.roadW * 3.5; i++) { g.fillStyle = r() < .5 ? 'rgba(0,0,0,.15)' : 'rgba(255,255,255,.05)'; g.fillRect(a0 + r() * s.roadW, r() * 256, 1 + r() * 2, 1 + r() * 2); }
     g.fillStyle = 'rgba(0,0,0,.11)'; for (let l = 0; l < s.lanes; l++) for (const o of [-laneW * .2, laneW * .2]) g.fillRect(a0 + (l + .5) * laneW + o - 7, 0, 14, 256);
     g.fillStyle = 'rgba(255,255,255,.9)'; if (s.edgeLines !== false) { g.fillRect(a0 + 10, 0, 5, 256); g.fillRect(a1 - 15, 0, 5, 256); }

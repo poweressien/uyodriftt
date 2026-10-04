@@ -142,7 +142,7 @@ export class Renderer3D {
     // camera: close behind the car, follows its travel direction a little so slides show; FOV widens with speed
     const sp = Math.hypot(f.vx, f.vy) * S; let tgt = f.heading; if (sp > 3) tgt = f.heading + wrap(Math.atan2(f.vy, f.vx) - f.heading) * .32;
     if (this.snapCam) { this.snapCam = false; this.camYaw = f.heading; }
-    this.camYaw += wrap(tgt - this.camYaw) * Math.min(1, dt * 5); const dx = Math.cos(this.camYaw), dz = Math.sin(this.camYaw), dist = 5.7 + f.ratio * 1.5, hgt = 2.05 + f.ratio * .3;
+    this.camYaw += wrap(tgt - this.camYaw) * Math.min(1, dt * 7.5); const dx = Math.cos(this.camYaw), dz = Math.sin(this.camYaw), dist = 5.7 + f.ratio * 1.5, hgt = 2.05 + f.ratio * .3;
     const sh = f.shake * .35; this.camPos.set(px - dx * dist + (Math.random() - .5) * sh, hgt + (Math.random() - .5) * sh * .6, pz - dz * dist + (Math.random() - .5) * sh);
     this.cam.position.copy(this.camPos); this.cam.lookAt(px + dx * 7.5, 1.05, pz + dz * 7.5);
     const tf = 60 + f.ratio * 20 + Math.max(0, f.ax) * .5; this.fov += (tf - this.fov) * Math.min(1, dt * 3); if (Math.abs(this.cam.fov - this.fov) > .05) { this.cam.fov = this.fov; this.cam.updateProjectionMatrix(); }
