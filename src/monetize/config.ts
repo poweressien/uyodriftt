@@ -18,7 +18,8 @@ export function adsMode(): AdsMode {
 export function payMode(): PayMode {
   const forced = String(env.VITE_PAY_MODE ?? '').toLowerCase();
   if (forced === 'mock' || forced === 'none') return forced;
-  if (env.VITE_PAYSTACK_KEY) return 'paystack';
+  // The app cannot confirm a payment without your server, so a native build with no VITE_API_BASE takes no payments at all.
+  if (env.VITE_PAYSTACK_KEY) return isNative() && !String(env.VITE_API_BASE ?? '').trim() ? 'none' : 'paystack';
   return DEV ? 'mock' : 'none';
 }
 export const CFG = {

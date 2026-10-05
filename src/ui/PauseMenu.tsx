@@ -1,6 +1,6 @@
 import { useSave, setSettings } from '../state/store';
 import { VIEW_LABEL } from '../game/data/settings';
-import { requestTilt } from '../game/systems/Controls';
+import { requestTilt, TILT_LABEL } from '../game/systems/Controls';
 import AudioPanel from './AudioPanel';
 import { pushPopup } from './Popups';
 
@@ -14,7 +14,7 @@ export default function PauseMenu({ onResume, onCam, onRestart, onQuit, live, to
         <h2>{live ? 'MENU' : 'PAUSED'}</h2>
         {live && <div className="muted">Live race: the clock keeps running.</div>}
         <button className="btn primary" onClick={onResume}>Resume</button>
-        <div className="pause-row"><button className="btn" onClick={onCam}>Camera: {VIEW_LABEL[s.view]}</button>{touch && <button className="btn" onClick={steer}>Steering: {s.controls === 'tilt' ? 'Tilt' : 'Arrows'}</button>}</div>
+        <div className="pause-row"><button className="btn" onClick={onCam}>Camera: {VIEW_LABEL[s.view]}</button>{touch && <button className="btn" onClick={steer}>Steering: {s.controls === 'tilt' ? 'Tilt' : 'Arrows'}</button>}{touch && s.controls === 'tilt' && <button className="btn" onClick={() => setSettings({ tiltSens: s.tiltSens % 3 + 1 })}>Tilt: {TILT_LABEL[s.tiltSens]}</button>}</div>
         <AudioPanel compact />
         <div className="pause-row">{onRestart && <button className="btn" onClick={onRestart}>Restart</button>}<button className="btn danger" onClick={onQuit}>{live ? 'Leave race' : 'Quit to menu'}</button></div>
       </div>

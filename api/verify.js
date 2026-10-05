@@ -2,6 +2,7 @@
 // Asks Paystack whether the payment really happened, for the right amount, in NGN, and (if Upstash Redis is configured)
 // refuses to honour the same reference twice. Needs env PAYSTACK_SECRET_KEY. Optional: UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN.
 import { PRODUCTS, toKobo } from './_products.js';
+import { cors } from './_cors.js';
 
 const json = (res, code, body) => { res.statusCode = code; res.setHeader('Content-Type', 'application/json'); res.setHeader('Cache-Control', 'no-store'); res.end(JSON.stringify(body)); };
 async function readBody(req) {
@@ -19,6 +20,7 @@ async function claim(ref, device) {
   return (await cmd(['GET', key])) === device;
 }
 export default async function handler(req, res) {
+  if (cors(req, res)) return;
   if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'POST only' });
   const secret = process.env.PAYSTACK_SECRET_KEY; if (!secret) return json(res, 500, { ok: false, error: 'Server is missing PAYSTACK_SECRET_KEY' });
   const { reference, product, device } = await readBody(req);

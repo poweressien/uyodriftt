@@ -1,0 +1,46 @@
+name: Android build
+# Builds the Uyo Drift APK in the cloud (no Android Studio needed). Run it from the Actions tab, or push to main.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    env:
+      # Public build settings. Add them in GitHub > Settings > Secrets and variables > Actions > Variables (all optional for a test build).
+      VITE_ADS_MODE: ${{ vars.VITE_ADS_MODE }}
+      VITE_ADMOB_REWARDED_ID: ${{ vars.VITE_ADMOB_REWARDED_ID }}
+      VITE_ADMOB_TEST: ${{ vars.VITE_ADMOB_TEST }}
+      VITE_PAY_MODE: ${{ vars.VITE_PAY_MODE }}
+      VITE_PAYSTACK_KEY: ${{ vars.VITE_PAYSTACK_KEY }}
+      VITE_API_BASE: ${{ vars.VITE_API_BASE }}
+      VERSION_CODE: ${{ github.run_number }}
+      HAS_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 21 }
+      - uses: android-actions/setup-android@v3
+      - run: npm ci
+      - run: npm run build
+      - run: npx cap sync android
+      - name: Debug APK (installs on any phone, ads use Google test units if VITE_ADMOB_TEST=1)
+        run: cd android && chmod +x gradlew && ./gradlew assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with: { name: uyo-drift-debug-apk, path: android/app/build/outputs/apk/debug/app-debug.apk }
+      - name: Signed release APK + AAB (only when the keystore secrets exist)
+        if: env.HAS_KEYSTORE == 'true'
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/release.jks"
+          export KEYSTORE_FILE="$RUNNER_TEMP/release.jks"
+          cd android && ./gradlew assembleRelease bundleRelease --no-daemon
+      - uses: actions/upload-artifact@v4
+        if: env.HAS_KEYSTORE == 'true'
+        with: { name: uyo-drift-release, path: "android/app/build/outputs/**/*release*" }

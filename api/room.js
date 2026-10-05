@@ -1,5 +1,6 @@
 // Vercel serverless function: short room codes for live races (optional; the game falls back to copy/paste codes without it).
 // POST /api/room  {action:'ping'|'create'|'join'|'answer'|'poll', ...}. Needs Upstash Redis: UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN.
+import { cors } from './_cors.js';
 const json = (res, code, body) => { res.statusCode = code; res.setHeader('Content-Type', 'application/json'); res.setHeader('Cache-Control', 'no-store'); res.end(JSON.stringify(body)); };
 async function readBody(req) {
   if (req.body && typeof req.body === 'object') return req.body;
@@ -16,6 +17,7 @@ const ALPHA = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789', newCode = () => Array.from({ l
 const okCode = c => typeof c === 'string' && /^[A-Z2-9]{5}$/.test(c), okBlob = s => typeof s === 'string' && s.length > 20 && s.length < 6000 && /^[\w-]+$/.test(s);
 const TTL = 600;
 export default async function handler(req, res) {
+  if (cors(req, res)) return;
   if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'POST only' });
   const b = await readBody(req), a = b.action;
   if (a === 'ping') return json(res, 200, { ok: true, enabled: enabled() });

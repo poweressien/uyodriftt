@@ -5,7 +5,7 @@ import { VEHICLES } from '../game/data/vehicles';
 import { watchAd } from '../monetize/watch';
 import { adsAvailable } from '../monetize/ads';
 import { VIEWS, VIEW_LABEL } from '../game/data/settings';
-import { requestTilt, hasTilt } from '../game/systems/Controls';
+import { requestTilt, hasTilt, TILT_LABEL } from '../game/systems/Controls';
 import { useSave, setSettings, resetSave, missionView, claimMission, achievementView, topRuns, districtName, Period } from '../state/store';
 import { Header, Coins } from './Bits';
 import { pushPopup } from './Popups';
@@ -65,6 +65,7 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
       {tab === "drive" && <><Card label="Steering (touch devices)" hint={hasTilt() ? 'Arrows: on-screen < > buttons. Tilt: turn your phone like a steering wheel; tap the tilt box in a run to re-centre.' : 'Tilt sensor not detected on this device.'}>
         <div className="chips left"><button className={`chip${st.controls === 'arrows' ? ' on' : ''}`} onClick={() => setSettings({ controls: 'arrows' })}>Arrows</button>
           <button className={`chip${st.controls === 'tilt' ? ' on' : ''}`} disabled={!hasTilt()} onClick={tilt}>Tilt</button></div>
+        {st.controls === 'tilt' && <><div className="muted" style={{ marginTop: 10 }}>Tilt sensitivity: how far you turn the phone for full lock.</div><div className="chips left">{[1, 2, 3].map(n => <button key={n} className={`chip${st.tiltSens === n ? ' on' : ''}`} onClick={() => setSettings({ tiltSens: n })}>{TILT_LABEL[n]}</button>)}</div></>}
         {!coarse && <div className="muted" style={{ marginTop: 6 }}>Desktop uses the keyboard. Add ?touch=1 to the address to preview touch controls.</div>}
         <label className="aud-cap"><input type="checkbox" checked={st.haptics} onChange={e => setSettings({ haptics: e.target.checked })} /> Vibrate on crashes (phones)</label>
       </Card>

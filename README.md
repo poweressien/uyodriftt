@@ -84,3 +84,23 @@ Honest limits: progress lives in the player's browser, so a determined cheater c
 - **New roster** (27 cars, each with its own 3D body, top-view size and wheelbase): Keke NAPEP, Danfo Bus, Toyota HiAce Mini Bus, Toyota Hilux, Nissan Altima / Patrol / 350Z, BMW 330i / M4, Chevrolet Tahoe / Camaro SS, Lexus LX 570, Luxury Coach, plus the earlier Toyota, Lexus, Mercedes, Range Rover and the two premium cars. Bodies: sedan, coupe, SUV, pickup, minibus, coach, keke.
 - **Upgrades now do something you can feel.** Before, engine and turbo power was cancelled by the drag calculation, so top speed never changed. Now every level changes the physics (engine +10% power, tyres +7% grip, brakes +10% braking, steering +7% lock, transmission +3% top speed and faster shifts, suspension steadier body and less crash damage, turbo power plus wheelspin kick). The Garage shows the measured numbers (top speed, 0 to 100, 100 to 0, grip, steering lock) with the change from stock, and each purchase pops up exactly what it changed. Measured with the real physics model: a Corolla at all level 5 goes from 186 to 241 km/h, 3.7 to 2.4 s to 100, and 30 m to 20 m braking.
 - **Drift feel**: tyre model retuned so a car holds a slide at 25 to 30 degrees with the throttle, keeps most of its speed through the drift, and recovers cleanly. Light rear-drive coupes (350Z, M4, Camaro) slide easily; the keke spins on a coin; the coach and the danfo are heavy and slow to rotate.
+
+## v4.5: smarter tilt + Android app (Capacitor)
+
+**Tilt steering.** It was dull because it needed about 25 degrees of tilt for full lock, read the laggy fused orientation sensor, and smoothed twice. Now:
+- reads the raw gravity sensor (devicemotion), falls back to deviceorientation;
+- adaptive filter: dead steady when you hold still, almost no lag when you move;
+- full lock at 15 degrees (Settings > Controls: Soft 22, Normal 15, Sharp 10; also a button in the pause menu);
+- a quick flick leads the angle so the car answers at once;
+- works in both landscape directions and flat like a tablet; calibrates at GO, tap the tilt box to re-centre.
+
+**Android app.** The project is in `android/` (package `ng.uyodrift.game`, landscape, full screen, screen stays on, back button pauses, pauses when you leave the app, icon and splash included).
+1. Easiest, no Android Studio: push the project to GitHub, open Actions > "Android build" > Run. Download `uyo-drift-debug-apk` and install it on any phone. Add repository Variables for the build: `VITE_ADS_MODE=admob`, `VITE_ADMOB_REWARDED_ID`, `VITE_ADMOB_TEST=1` (until you are approved), `VITE_PAY_MODE=paystack`, `VITE_PAYSTACK_KEY`, `VITE_API_BASE=https://your-site.vercel.app`.
+2. On your computer (JDK 21 + Android SDK): `npm install`, set the same VITE_ values in `.env.production`, then `npm run android:apk` (APK in `android/app/build/outputs/apk/debug`) or `npm run android:open` for Android Studio.
+3. Before publishing: replace the test AdMob app id in `android/app/src/main/res/values/strings.xml`, then make a keystore (`keytool -genkey -v -keystore release.jks -alias uyo -keyalg RSA -keysize 2048 -validity 10000`). For CI signing add secrets `ANDROID_KEYSTORE_BASE64` (`base64 -w0 release.jks`), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD` and the workflow also builds a signed APK and AAB.
+4. The app calls your website's `/api` (payment check, room codes), so deploy the site on Vercel first. `api/_cors.js` already allows the app.
+
+Things to know:
+- **Google Play rule:** Play requires Google Play Billing for in-game items sold in apps on the Play Store. Paystack is fine on the web and for APKs you share yourself, but a Play Store release with Paystack for coins, gas and cars can be rejected or removed. Check Play's current payments policy for Nigeria before you publish.
+- Rewarded ads in the app use AdMob; keep `VITE_ADMOB_TEST=1` until your AdMob account and app are approved, and never tap your own live ads.
+- No APK is included in the zip: this build environment has no Android SDK and cannot reach Google's build servers, so the APK is built by the GitHub workflow or on your machine.

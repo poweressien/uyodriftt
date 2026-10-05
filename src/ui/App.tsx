@@ -12,7 +12,7 @@ import { music, unlockAudio, uiSound } from '../game/systems/Audio';
 import { requestTilt } from '../game/systems/Controls';
 import { MpSession, parseInvite } from '../game/systems/Net';
 import { useSave, select, setSettings, finishRun, parseChallenge, makeChallengeLink, getSave, logChallenge, playerName, useGas, addCoins, Outcome } from '../state/store';
-import { GasHost, openGas } from './Gas';
+import { GasHost, openGas, closeGas } from './Gas';
 import Shop from './Shop';
 import AdHost from '../monetize/AdHost';
 import { resumePending } from '../monetize/pay';
@@ -20,6 +20,7 @@ import { resumePending } from '../monetize/pay';
 import { PopupHost, pushPopup } from './Popups';
 import Garage from './Garage';
 import Menu, { type Go } from './Menu';
+import { initNative, onBackButton, onAppActive, exitApp } from '../native';
 import PlayScreen from './PlayScreen';
 import PauseMenu from './PauseMenu';
 import Career, { DailyCard } from './Career';
@@ -46,6 +47,11 @@ export default function App() {
   useEffect(() => { if (screen === 'running' || screen === 'goodbye') return; music.start('menu'); return () => music.stop(true); }, [screen]);
   useEffect(() => () => { sessionRef.current?.close(); }, []);
   useEffect(() => { void resumePending().then(got => got.forEach(p => pushPopup({ kind: 'reward', title: `${p.name} confirmed`, body: 'Thank you!' }))); }, []);
+  // ---- Android shell: back button, and pause when the app goes to the background
+  const bk = useRef<() => void>(() => {}), bg = useRef<(active: boolean) => void>(() => {});
+  bk.current = () => { closeGas(); if (confirmQuit) setConfirmQuit(false); else if (screen === 'running') gameRef.current?.events.emit('pause-toggle'); else if (screen === 'menu') setConfirmQuit(true); else if (screen === 'goodbye') go('menu'); else go('menu'); };
+  bg.current = (active: boolean) => { if (!active && screen === 'running' && !paused) gameRef.current?.events.emit('pause-toggle'); };
+  useEffect(() => { void initNative(); const a = onBackButton(() => bk.current()), b = onAppActive(x => bg.current(x)); return () => { a(); b(); }; }, []);
 
   const startRun = async (over?: { mp?: MpStart; challenge?: Ch }) => {
     unlockAudio(); if (!useGas()) { openGas(); return false; }
@@ -138,7 +144,7 @@ export default function App() {
         {screen === 'career' && <Career onBack={back} onPlay={() => go('play')} />}
         {screen === 'multiplayer' && <Multiplayer view={mpView} onBack={back} session={session} setSession={setSession} invite={invite} clearInvite={() => setInvite(null)} onStart={m => void startRun({ mp: m })} onChallenge={c => void startRun({ challenge: c })} />}
       </>}
-      {confirmQuit && <div className="pause"><div className="pause-card"><h2>QUIT GAME?</h2><div className="muted">Your progress is already saved.</div><div className="pause-row"><button className="btn" onClick={() => setConfirmQuit(false)}>Stay</button><button className="btn danger" onClick={() => { setConfirmQuit(false); session?.close(); setScreen('goodbye'); }}>Quit</button></div></div></div>}
+      {confirmQuit && <div className="pause"><div className="pause-card"><h2>QUIT GAME?</h2><div className="muted">Your progress is already saved.</div><div className="pause-row"><button className="btn" onClick={() => setConfirmQuit(false)}>Stay</button><button className="btn danger" onClick={() => { setConfirmQuit(false); session?.close(); void exitApp().then(done => { if (!done) setScreen('goodbye'); }); }}>Quit</button></div></div></div>}
     </div>
   );
 }

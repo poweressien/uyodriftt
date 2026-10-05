@@ -1,6 +1,6 @@
 /** Rewarded ads behind one function. The game never knows which network is live:
  *    adsense : Google AdSense "H5 Games Ads" (web). Needs an approved site and VITE_ADSENSE_CLIENT.
- *    admob   : Google AdMob through Capacitor (Android/iOS wrapper). Needs the @capacitor-community/admob plugin and VITE_ADMOB_REWARDED_ID.
+ *    admob   : Google AdMob through Capacitor (Android/iOS wrapper). Needs the @capacitor-community/admob plugin (already installed) and VITE_ADMOB_REWARDED_ID.
  *    mock    : a fake 5-second ad for development and demos (never active in a production build unless VITE_ADS_MODE=mock).
  *    none    : no network configured. Ad buttons disable themselves and NOTHING is given away. */
 import { adsMode, CFG, type AdsMode } from './config';
@@ -59,13 +59,23 @@ async function adsenseReward(name: string): Promise<AdResult> {
   });
 }
 
-// ---- AdMob via Capacitor (@capacitor-community/admob registers itself as Capacitor.Plugins.AdMob)
+// ---- AdMob via Capacitor. The plugin has to be imported so it registers with the native side; the dynamic import keeps it out of the web bundle's main chunk.
 let admobInit: Promise<void> | null = null;
 async function admobReward(): Promise<AdResult> {
-  const A = (window as any).Capacitor?.Plugins?.AdMob; if (!A) return 'unavailable';
-  if (!admobInit) admobInit = A.initialize({}).then(() => undefined);
-  await admobInit;
-  await A.prepareRewardVideoAd({ adId: CFG.admobRewardedId, isTesting: CFG.admobTest });
-  const r = await A.showRewardVideoAd(); // resolves with the reward item once the video is completed
-  return r && (r.amount !== undefined || r.type !== undefined) ? 'rewarded' : 'dismissed';
+  const { AdMob, RewardAdPluginEvents: E } = await import('@capacitor-community/admob');
+  if (!admobInit) admobInit = AdMob.initialize({ initializeForTesting: CFG.admobTest }).then(() => undefined);
+  try { await admobInit; } catch { admobInit = null; return 'unavailable'; }
+  return new Promise<AdResult>(resolve => {
+    let rewarded = false, done = false; const hs: { remove: () => Promise<void> }[] = [];
+    const end = (r: AdResult) => { if (done) return; done = true; clearTimeout(guard); hs.forEach(h => void h.remove()); resolve(r); };
+    const guard = setTimeout(() => end(rewarded ? 'rewarded' : 'unavailable'), 150000);
+    // The reward event is the only thing that pays out; closing the video early ends as 'dismissed'.
+    Promise.all([
+      AdMob.addListener(E.Rewarded, () => { rewarded = true; }),
+      AdMob.addListener(E.Dismissed, () => end(rewarded ? 'rewarded' : 'dismissed')),
+      AdMob.addListener(E.FailedToLoad, () => end('unavailable')),
+      AdMob.addListener(E.FailedToShow, () => end('unavailable')),
+    ]).then(h => { hs.push(...h); return AdMob.prepareRewardVideoAd({ adId: CFG.admobRewardedId, isTesting: CFG.admobTest }); })
+      .then(() => AdMob.showRewardVideoAd()).catch(() => end('unavailable'));
+  });
 }
