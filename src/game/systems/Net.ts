@@ -1,9 +1,13 @@
 /** Live multiplayer without a server: a WebRTC data channel between two phones/browsers.
  *  The two players swap one short code each (the host sends an invite link, the friend sends back a reply code), then everything
  *  runs peer to peer. Works on most home and mobile networks; a few strict mobile carriers block direct connections. */
-export interface MpPlayer { name: string; vehicleId: string; kind: 'sedan' | 'suv'; color: number; decal: string; wheel: number; glass: number; rank: number }
+import type { Body } from '../data/vehicles';
+export interface MpPlayer { name: string; vehicleId: string; kind: Body; color: number; decal: string; wheel: number; glass: number; rank: number }
 export type MpMsg = { t: string; [k: string]: any };
-const ICE: RTCIceServer[] = [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }, { urls: 'stun:global.stun.twilio.com:3478' }];
+const env = (import.meta as any).env ?? {};
+/** STUN finds your public address; an optional TURN relay (VITE_TURN_URL / VITE_TURN_USER / VITE_TURN_PASS) rescues the networks that block direct connections. */
+const ICE: RTCIceServer[] = [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }, { urls: 'stun:global.stun.twilio.com:3478' }, { urls: 'stun:stun.cloudflare.com:3478' },
+  ...(env.VITE_TURN_URL ? [{ urls: String(env.VITE_TURN_URL).split(',').map((u: string) => u.trim()), username: String(env.VITE_TURN_USER ?? ''), credential: String(env.VITE_TURN_PASS ?? '') } as RTCIceServer] : [])];
 
 export class MpSession {
   /** Sticky race flags: the other phone may finish loading first, so its 'ready'/'go' must not be lost. Cleared when a race ends. */
@@ -62,3 +66,19 @@ export async function guestJoin(invite: string) {
   return { session, reply: await packCode(pc.localDescription!) };
 }
 export const parseInvite = (hash: string) => { const m = /[#&]j=([^&\s]+)/.exec(hash); return m ? decodeURIComponent(m[1]) : null; };
+
+// ---- optional short room codes (needs /api/room + Upstash on the server; otherwise the copy/paste flow above is used)
+const API = String(env.VITE_API_BASE ?? '').replace(/\/$/, '');
+async function roomCall(body: object): Promise<any> {
+  const r = await fetch(`${API}/api/room`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); const o = await r.json().catch(() => ({}));
+  if (!r.ok || !o.ok) throw new Error(o.error || 'Room service unavailable'); return o;
+}
+let roomsProbe: Promise<boolean> | null = null;
+export const roomsAvailable = () => (roomsProbe ??= roomCall({ action: 'ping' }).then(o => !!o.enabled).catch(() => false));
+/** Host: get a 5-letter code. The friend types it; we collect their answer in the background and connect. `cancel()` stops waiting. */
+export async function hostRoom() {
+  const h = await hostCreate(), { code } = await roomCall({ action: 'create', offer: h.code }); let stop = false;
+  void (async () => { for (let i = 0; i < 400 && !stop; i++) { await new Promise(r => setTimeout(r, 1500)); if (stop || h.session.state !== 'connecting') return; try { const o = await roomCall({ action: 'poll', code }); if (o.answer) { await h.accept(o.answer); return; } } catch (e: any) { if (/not found|expired/i.test(e?.message)) return; } } })();
+  return { session: h.session, code, cancel: () => { stop = true; } };
+}
+export async function joinRoom(code: string) { const c = code.trim().toUpperCase(), { offer } = await roomCall({ action: 'join', code: c }), g = await guestJoin(offer); await roomCall({ action: 'answer', code: c, answer: g.reply }); return g.session; }

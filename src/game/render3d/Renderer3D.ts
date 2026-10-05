@@ -61,6 +61,16 @@ export class Renderer3D {
     if (c.weather === 'rain' || c.weather === 'heavy_rain') this.makeRain(c.weather === 'heavy_rain' ? 1100 : 600);
     this.built = true; this.pk = -999; this.snapCam = true;
   }
+  /** Journey finish: chequered strip across the road and a gantry with the town name. `yPx` is the world y of the line (px). */
+  setFinish(yPx: number, text: string) {
+    if (!this.ok || !this.built) return; const W = eRoadW(this.lanes) * S, z = yPx * S, g = new THREE.Group();
+    const cv = document.createElement('canvas'); cv.width = 256; cv.height = 32; const c = cv.getContext('2d')!; for (let i = 0; i < 32; i++) for (let j = 0; j < 4; j++) { c.fillStyle = (i + j) % 2 ? '#ffffff' : '#101010'; c.fillRect(i * 8, j * 8, 8, 8); }
+    const ct = new THREE.CanvasTexture(cv); ct.colorSpace = THREE.SRGBColorSpace; const strip = new THREE.Mesh(new THREE.PlaneGeometry(W, 2.4), new THREE.MeshBasicMaterial({ map: ct })); strip.rotation.x = -Math.PI / 2; strip.position.set(0, .05, z); g.add(strip);
+    const post = new THREE.MeshStandardMaterial({ color: 0x19d3ff, emissive: 0x0a5a70, roughness: .4 }); for (const sd of [-1, 1]) { const m = new THREE.Mesh(new THREE.BoxGeometry(.6, 8, .6), post); m.position.set(sd * (W / 2 + 1.3), 4, z); g.add(m); }
+    const bc = document.createElement('canvas'); bc.width = 1024; bc.height = 160; const b = bc.getContext('2d')!; b.fillStyle = '#071226'; b.fillRect(0, 0, 1024, 160); b.strokeStyle = '#19d3ff'; b.lineWidth = 8; b.strokeRect(6, 6, 1012, 148); b.fillStyle = '#ffffff'; b.font = '900 italic 64px Orbitron, Arial, sans-serif'; b.textAlign = 'center'; b.textBaseline = 'middle'; b.fillText(text, 512, 82, 960);
+    const bt = new THREE.CanvasTexture(bc); bt.colorSpace = THREE.SRGBColorSpace; const ban = new THREE.Mesh(new THREE.PlaneGeometry(W + 2.6, 2.8), new THREE.MeshBasicMaterial({ map: bt, side: THREE.DoubleSide })); ban.position.set(0, 7.2, z); g.add(ban);
+    this.scene.add(g);
+  }
   private teardown() { if (!this.built) return; this.scene.traverse(o => { const m = o as THREE.Mesh; if (m.geometry && !(o instanceof THREE.InstancedMesh)) { /* geometries are cached/shared: leave */ } }); this.built = false; this.spots = []; this.hz = { cone: [], pothole: [], flood: [] }; this.rain = undefined; this.road = undefined; this.rails = undefined; this.traffic = []; }
   private makeHazard(kind: string): THREE.Object3D {
     if (kind === 'cone') { const g = new THREE.Group(); const c = new THREE.Mesh(new THREE.ConeGeometry(.3, .75, 12), new THREE.MeshStandardMaterial({ color: 0xff7a14, roughness: .5 })); c.position.y = .38; const b = new THREE.Mesh(new THREE.CylinderGeometry(.19, .23, .14, 12), new THREE.MeshStandardMaterial({ color: 0xffffff })); b.position.y = .4; const base = new THREE.Mesh(new THREE.BoxGeometry(.6, .05, .6), new THREE.MeshStandardMaterial({ color: 0x1a1a1a })); base.position.y = .03; g.add(c, b, base); return g; }

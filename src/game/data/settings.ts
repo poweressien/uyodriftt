@@ -3,7 +3,9 @@ export type View = 'behind' | 'top' | 'chase' | 'wide' | 'hood';
 export const VIEWS: View[] = ['behind', 'top', 'chase', 'wide', 'hood'];
 export const VIEW_LABEL: Record<View, string> = { behind: 'Behind (3D)', top: 'Top', chase: 'Chase', wide: 'Wide', hood: 'Hood' };
 export type Controls = 'arrows' | 'tilt';
-export type Mode = 'drift' | 'endless';
+export type Mode = 'drift' | 'endless' | 'journey' | 'elim' | 'demo';
+/** Race modes run in the endless-road scene with rivals, damage and a finish. */
+export const isRace = (m?: Mode) => m === 'journey' || m === 'elim' || m === 'demo';
 export type WeatherPick = 'auto' | 'sunny' | 'cloudy' | 'rain' | 'night';
 export const WEATHER_PICKS: WeatherPick[] = ['auto', 'sunny', 'cloudy', 'rain', 'night'];
 /** Four independent audio channels, each 0..1 (0 = off). */
@@ -18,8 +20,8 @@ export interface Settings {
   name: string;        // shown to friends in multiplayer
   v?: number;
 }
-export const SETTINGS_VERSION = 4;
-export const DEFAULT_SETTINGS: Settings = { controls: 'arrows', view: 'behind', music: .6, engine: .35, radio: .8, sfx: .8, radioText: true, haptics: true, name: '', v: SETTINGS_VERSION };
+export const SETTINGS_VERSION = 5;
+export const DEFAULT_SETTINGS: Settings = { controls: 'arrows', view: 'behind', music: .6, engine: 0, radio: .8, sfx: .8, radioText: true, haptics: true, name: '', v: SETTINGS_VERSION };
 const num = (x: unknown, d: number) => (typeof x === 'number' && Number.isFinite(x) ? Math.max(0, Math.min(1, x)) : d);
 /** Reads any older save (v1/v2 had music/sfx booleans) into the current shape. */
 export function migrateSettings(raw: any): Settings {
@@ -29,7 +31,7 @@ export function migrateSettings(raw: any): Settings {
     controls: r.controls === 'tilt' ? 'tilt' : 'arrows',
     view: VIEWS.includes(r.view) && (r.v ?? 0) >= 2 ? r.view : 'behind',
     music: num(boolVol(r.music, d.music) ?? r.music, d.music),
-    engine: (r.v ?? 0) < 4 ? Math.min(d.engine, num(r.engine ?? boolVol(r.sfx, d.engine), d.engine)) : num(r.engine ?? boolVol(r.sfx, d.engine), d.engine), // v4: car sound re-tuned quieter, old saves reset to the new default
+    engine: (r.v ?? 0) < 5 ? d.engine : num(r.engine ?? boolVol(r.sfx, d.engine), d.engine), // v5: the engine hum is OFF by default (players found it aggressive); everyone is reset to off once and can turn it up in Settings
     radio: num(r.radio ?? boolVol(r.sfx, d.radio), d.radio),
     sfx: num(boolVol(r.sfx, d.sfx) ?? r.sfx, d.sfx),
     radioText: typeof r.radioText === 'boolean' ? r.radioText : true,

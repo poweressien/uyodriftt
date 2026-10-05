@@ -20,11 +20,12 @@ import { ImpactFx } from '../systems/ImpactFx';
 import { tilt, SteerShaper } from '../systems/Controls';
 import { CoinField, COIN_VALUE, COIN_RADIUS } from '../systems/Pickups';
 import type { MpSession, MpMsg } from '../systems/Net';
-import { PPM } from '../data/vehicles';
+import { PPM, BODY, type Body } from '../data/vehicles';
 import { getSave, setSettings, addCoins, grantLive } from '../../state/store';
 
 const RUN_SECONDS = 90, MP_WAIT_MAX = 20, LAP_BONUS = 500, COUNTDOWN = 3.2, TRAFFIC_TINTS = [0x8a8f94, 0x2f4a66, 0xa8281f, 0xe6e6e6, 0x2c6b3e];
-type TCar = { k: 'sedan' | 'suv'; car: Phaser.GameObjects.Container; f: number; spd: number; base: number; off: number; baseOff: number; nm: boolean; cool: number; kick: number; rot: number; spinV: number; l: number; w: number; color: number };
+const TRAFFIC_KINDS: Body[] = ['sedan', 'suv', 'sedan', 'keke', 'pickup', 'sedan', 'minibus', 'coupe', 'suv', 'sedan'];
+type TCar = { k: Body; car: Phaser.GameObjects.Container; f: number; spd: number; base: number; off: number; baseOff: number; nm: boolean; cool: number; kick: number; rot: number; spinV: number; l: number; w: number; color: number };
 type Touch = { left: boolean; right: boolean; brake: boolean; hand: boolean };
 
 export class DriveScene extends Phaser.Scene {
@@ -39,7 +40,7 @@ export class DriveScene extends Phaser.Scene {
   private timeLeft = RUN_SECONDS; private countdown = COUNTDOWN; private lastCount = 4; private paused = false; private ended = false; private tiltChecked = false;
   private coinsF!: CoinField; private pickups = 0; private distPx = 0; private achT = 0; private nmCount = 0; private shaper = new SteerShaper();
   private mp: MpSession | null = null; private mpWait = false; private mpWaited = 0; private mpSendT = 0; private mpOffs: (() => void)[] = []; private oppReady = false; private oppDone = false; private oppScore = 0; private oppName = ''; private finishing = false; private meReady = false; private lastLead = true;
-  private opp: { car: Phaser.GameObjects.Container; x: number; y: number; h: number; has: boolean; color: number } | null = null; private oppKind: 'sedan' | 'suv' = 'sedan';
+  private opp: { car: Phaser.GameObjects.Container; x: number; y: number; h: number; has: boolean; color: number } | null = null; private oppKind: Body = 'sedan';
   private nextSpawn = 2; private hint = 4; private lastIdx = 4; private laps = 0; private armed = false; private floodT = 0; private hudT = 0; private frame = 0; private musT = 0;
 
   init(cfg: RunConfig) {
@@ -50,7 +51,7 @@ export class DriveScene extends Phaser.Scene {
     this.scorer = new DriftScorer(); this.timeLeft = RUN_SECONDS; this.countdown = COUNTDOWN; this.lastCount = 4; this.paused = false; this.ended = false; this.tiltChecked = false; this.dmg = 0;
     this.pickups = 0; this.distPx = 0; this.achT = 0; this.nmCount = 0; this.shaper = new SteerShaper(); this.mp = cfg.mp ?? null; this.mpWait = !!cfg.mp; this.mpWaited = 0; this.mpSendT = 0; this.mpOffs = []; this.oppReady = false; this.oppDone = false; this.oppScore = 0; this.oppName = cfg.mp?.opponent?.name ?? ''; this.finishing = false; this.meReady = false; this.opp = null; this.oppKind = cfg.mp?.opponent?.kind ?? 'sedan';
     this.traffic = []; this.skids = []; this.skidAge = []; this.skidI = 0; this.hint = 4; this.lastIdx = 4; this.laps = 0; this.armed = false; this.floodT = 0; this.nextSpawn = 2;
-    const suv = this.veh.kind === 'suv'; this.pl = suv ? 68 : 62; this.pw = suv ? 31 : 27; this.mass = 1 + (this.veh.weight - 5) * .08;
+    this.pl = BODY[this.veh.kind].pl; this.pw = BODY[this.veh.kind].pw; this.mass = 1 + (this.veh.weight - 5) * .08;
   }
 
   create() {
@@ -65,7 +66,7 @@ export class DriveScene extends Phaser.Scene {
 
     const s = t.pts[4]; this.phys = new CarPhysics(this.pp); this.phys.x = s.x; this.phys.y = s.y; this.phys.heading = Math.atan2(t.tan[4].y, t.tan[4].x);
     this.baseColor = look.paint ? parseInt(look.paint.slice(1), 16) : this.veh.color;
-    this.car = buildCar(this, { color: this.baseColor, decal: look.decal, glass: .55 + look.tint * .15, wheel: WHEEL_TINT[look.wheels], kind: this.veh.kind, x: s.x, y: s.y }).setDepth(30).setRotation(this.phys.heading);
+    this.car = buildCar(this, { color: this.baseColor, decal: look.decal !== 'none' ? look.decal : this.veh.livery ?? 'none', glass: .55 + look.tint * .15, wheel: WHEEL_TINT[look.wheels], kind: this.veh.kind, x: s.x, y: s.y }).setDepth(30).setRotation(this.phys.heading);
     this.carBody = this.car.getData('body'); this.carBrake = this.car.getData('brake');
     const vis = WEATHER_FX[this.weather].visibility;
     if (vis < .85) this.beam = this.add.image(s.x, s.y, 'beam').setOrigin(0, .5).setBlendMode(Phaser.BlendModes.ADD).setDepth(26).setRotation(this.phys.heading);
@@ -74,8 +75,8 @@ export class DriveScene extends Phaser.Scene {
     for (let i = 0; i < 140; i++) { this.skids.push(this.add.image(0, 0, 'skid').setTint(0x000000).setDepth(-0.5).setVisible(false)); this.skidAge.push(9); }
     const cnt = Math.round(this.dist.traffic * 10); // traffic density per district
     for (let i = 0; i < cnt; i++) {
-      const suv = i % 4 === 1, color = i % 3 === 0 ? 0xffb300 : Phaser.Utils.Array.GetRandom(TRAFFIC_TINTS), base = 2.2 + Math.random() * 2.3, off = (i % 2 ? 1 : -1) * t.width * .2;
-      this.traffic.push({ k: suv ? 'suv' : 'sedan', car: buildCar(this, { color, kind: suv ? 'suv' : 'sedan' }).setDepth(8), f: 30 + (i * (t.n - 60)) / Math.max(1, cnt), spd: base, base, off, baseOff: off, nm: false, cool: 0, kick: 0, rot: 0, spinV: 0, l: suv ? 68 : 62, w: suv ? 31 : 27, color });
+      const k = TRAFFIC_KINDS[i % TRAFFIC_KINDS.length], color = k === 'minibus' ? 0xf5b800 : k === 'keke' ? 0xffc41f : i % 3 === 0 ? 0xffb300 : Phaser.Utils.Array.GetRandom(TRAFFIC_TINTS), base = 2.2 + Math.random() * 2.3, off = (i % 2 ? 1 : -1) * t.width * .2;
+      this.traffic.push({ k, car: buildCar(this, { color, kind: k, decal: k === 'minibus' ? 'danfo' : undefined }).setDepth(8), f: 30 + (i * (t.n - 60)) / Math.max(1, cnt), spd: base, base, off, baseOff: off, nm: false, cool: 0, kick: 0, rot: 0, spinV: 0, l: BODY[k].pl, w: BODY[k].pw, color });
     }
     this.coinsF = new CoinField(this, 90); this.seedCoins();
     if (this.mp?.opponent) { const o = this.mp.opponent; this.opp = { car: buildCar(this, { color: o.color, decal: o.decal, glass: o.glass, kind: o.kind }).setDepth(29).setAlpha(.8).setVisible(false), x: 0, y: 0, h: 0, has: false, color: o.color }; }
@@ -86,7 +87,7 @@ export class DriveScene extends Phaser.Scene {
     this.touch = this.registry.get('touch') as Touch; this.touchMode = !!this.registry.get('touchMode'); this.input.addPointer(3); if (this.touchMode) tilt.start();
     this.registry.set('mode', 'drift'); this.registry.set('weather', this.weather);
     this.scene.launch('HUD'); this.world.update(this.rig.bounds(), true);
-    this.r3d?.setup({ mode: 'drift', dist: this.dist, weather: this.weather, seed: [...this.dist.id].reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 7) & 0xffff, track: this.track, layout: this.layout, player: { kind: this.veh.kind, color: this.baseColor, decal: look.decal, wheel: WHEEL_TINT[look.wheels], glass: .55 + look.tint * .15 }, traffic: [...this.traffic.map(t => t.k), ...(this.opp ? [this.oppKind] : [])] });
+    this.r3d?.setup({ mode: 'drift', dist: this.dist, weather: this.weather, seed: [...this.dist.id].reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 7) & 0xffff, track: this.track, layout: this.layout, player: { kind: this.veh.kind, color: this.baseColor, decal: look.decal !== 'none' ? look.decal : this.veh.livery ?? 'none', wheel: WHEEL_TINT[look.wheels], glass: .55 + look.tint * .15 }, traffic: [...this.traffic.map(t => t.k), ...(this.opp ? [this.oppKind] : [])] });
     this.applyView(getSave().settings.view);
     this.audio = new GameAudio(this.weather, look.horn); music.start('drive');
     this.radio = new Radio(line => { const st = getSave().settings; if (st.radioText) this.game.events.emit('radio', line); if (st.radio > 0) speak(line, st.radio); });
@@ -176,7 +177,7 @@ export class DriveScene extends Phaser.Scene {
     if (speed > this.pp.maxSpeed * .94) { if ((this.fastT += dt) > 3.5) { this.fastT = -25; this.radio.say('fast'); } }
     this.fx.damage(dt, P.x, P.y, P.heading, this.dmg > .3 ? Math.min(1, this.dmg) : 0);
     // slide feedback: tyre smoke + skid marks
-    if (Math.abs(P.vl) > 75) { const rx = P.x - c * 24, ry = P.y - s * 24; this.smoke.emitParticleAt(rx, ry, 1); this.r3d?.tyreSmoke(rx, ry, P.vx, P.vy);
+    if (Math.abs(P.vl) > 75) { const rx = P.x - c * 24, ry = P.y - s * 24; this.smoke.emitParticleAt(rx, ry, P.dr > .5 ? 3 : 1); this.r3d?.tyreSmoke(rx, ry, P.vx, P.vy);
       if (!off && this.frame % 2 === 0) { this.skid(rx - s * 12, ry + c * 12, Math.atan2(P.vy, P.vx)); this.skid(rx + s * 12, ry - c * 12, Math.atan2(P.vy, P.vx)); } }
     if ((this.frame++ & 3) === 0) for (let i = 0; i < this.skids.length; i++) if (this.skidAge[i] < 6) { this.skidAge[i] += dt * 4; const a = .5 * (1 - this.skidAge[i] / 6); if (a <= 0) this.skids[i].setVisible(false); else this.skids[i].setAlpha(a); }
     // scoring

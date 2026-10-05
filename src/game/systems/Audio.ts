@@ -84,8 +84,8 @@ export const music = new Music();
 // ---------------------------------------------------------------- per-run sound effects
 type HornSpec = { f: number[]; dur: number; type: OscillatorType };
 const HORNS: Record<string, HornSpec> = {
-  classic: { f: [440, 554], dur: .35, type: 'square' }, danfo: { f: [311, 392], dur: .7, type: 'sawtooth' },
-  keke: { f: [880], dur: .18, type: 'square' }, air: { f: [233, 293], dur: 1, type: 'sawtooth' },
+  classic: { f: [440, 554], dur: .35, type: 'triangle' }, danfo: { f: [311, 392], dur: .7, type: 'triangle' },
+  keke: { f: [880], dur: .18, type: 'triangle' }, air: { f: [233, 293], dur: 1, type: 'triangle' },
 };
 export class GameAudio {
   private b = getBus(); private out: GainNode; private carOut: GainNode; private sources: (OscillatorNode | AudioBufferSourceNode)[] = []; private dead = false; private timer = 0; private eng: EngineSynth;
@@ -94,7 +94,7 @@ export class GameAudio {
   constructor(weather: string, private hornId: string) {
     const b = this.b, c = b.ctx; this.out = c.createGain(); this.out.connect(b.sfx); this.carOut = c.createGain(); this.carOut.connect(b.engine); unlockAudio();
     this.eng = new EngineSynth(c, this.carOut, b.noise);
-    this.screech = this.loop('bandpass', 850, 0, .7, this.carOut, 1500); this.wind = this.loop('bandpass', 420, 0, .4, this.carOut, 900);
+    this.screech = c.createGain(); this.wind = c.createGain(); // tyre screech and wind noise were removed: they were the harsh part of the car sound (gains stay at 0, unconnected)
     this.loop('highpass', 1200, weather === 'heavy_rain' ? .16 : weather === 'rain' ? .08 : 0, .7); this.loop('lowpass', 260, .035, .7); this.loop('bandpass', 900, weather === 'night' ? .006 : .012, .5);
     this.timer = window.setInterval(() => { if (!this.dead) this.beep([Math.random() < .5 ? 420 : 520], .3, .012, 'triangle'); }, 14000 + Math.random() * 10000); // distant horn in the traffic
   }
@@ -116,20 +116,19 @@ export class GameAudio {
   /** severity 0..1 */
   crash(sev = .6) {
     const b = this.b, t = b.ctx.currentTime, s = Math.max(.15, Math.min(1, sev));
-    tone(b, this.out, t, 'sine', 140, 40, .25 + .4 * s, .32); burst(b, this.out, t, 'lowpass', 2000, .8, .38 * s + .1, .4, 300);
-    tone(b, this.out, t, 'square', 310, 300, .04 + .09 * s, .22); tone(b, this.out, t + .015, 'square', 473, 460, .035 + .08 * s, .18); burst(b, this.out, t, 'bandpass', 1300, 3, .16 * s, .3);
-    if (s > .45) for (let i = 0; i < 7; i++) tone(b, this.out, t + .03 + Math.random() * .28, 'sine', 3000 + Math.random() * 3500, 2500, .028 * s, .07); // glass
+    tone(b, this.out, t, 'sine', 120, 40, .2 + .28 * s, .3); burst(b, this.out, t, 'lowpass', 900, .7, .2 * s + .05, .35, 300);
+    
   }
   thud() { this.crash(.45); }
-  scrape(sev = .5) { burst(this.b, this.out, this.b.ctx.currentTime, 'bandpass', 2300, 2.5, .14 * sev + .04, .28, 1500); }
+  scrape(sev = .5) { burst(this.b, this.out, this.b.ctx.currentTime, 'lowpass', 700, .7, .05 * sev + .02, .22, 500); }
   whoosh() { burst(this.b, this.out, this.b.ctx.currentTime, 'bandpass', 500, 1.2, .1, .4, 2600); }
-  countdown(n: number) { const t = this.b.ctx.currentTime; if (n > 0) tone(this.b, this.out, t, 'square', 520, 520, .08, .2, .01); else { tone(this.b, this.out, t, 'square', 1040, 1040, .1, .5, .01); tone(this.b, this.out, t, 'sawtooth', 520, 520, .05, .5, .01); } }
-  coin() { const t = this.b.ctx.currentTime; tone(this.b, this.out, t, 'square', 988, 988, .06, .08); tone(this.b, this.out, t + .08, 'square', 1319, 1319, .06, .22); }
+  countdown(n: number) { const t = this.b.ctx.currentTime; if (n > 0) tone(this.b, this.out, t, 'triangle', 520, 520, .08, .2, .01); else { tone(this.b, this.out, t, 'triangle', 1040, 1040, .1, .5, .01); tone(this.b, this.out, t, 'sine', 520, 520, .05, .5, .01); } }
+  coin() { const t = this.b.ctx.currentTime; tone(this.b, this.out, t, 'triangle', 988, 988, .06, .08); tone(this.b, this.out, t + .08, 'triangle', 1319, 1319, .06, .22); }
   /** Achievement / reward chime */
   chime() { const t = this.b.ctx.currentTime; [784, 988, 1319, 1568].forEach((f, i) => tone(this.b, this.out, t + i * .08, 'triangle', f, f, .09, .45, .01)); }
   sting(kind: 'over' | 'revive' | 'milestone') {
     const t = this.b.ctx.currentTime, seq = kind === 'over' ? [392, 330, 262, 196] : kind === 'revive' ? [262, 330, 392, 523, 659] : [659, 784, 1047];
-    seq.forEach((f, i) => tone(this.b, this.out, t + i * (kind === 'over' ? .22 : .09), kind === 'over' ? 'sawtooth' : 'triangle', f, f, .09, kind === 'over' ? .5 : .3, .01));
+    seq.forEach((f, i) => tone(this.b, this.out, t + i * (kind === 'over' ? .22 : .09), 'triangle', f, f, .09, kind === 'over' ? .5 : .3, .01));
   }
   setPaused(p: boolean) { const t = this.b.ctx.currentTime; this.out.gain.setTargetAtTime(p ? 0 : 1, t, .03); this.carOut.gain.setTargetAtTime(p ? 0 : 1, t, .03); music.duck(p ? .3 : 1); }
   toggleMute() { toggleMuteAll(); }
@@ -153,8 +152,10 @@ export function uiSound(kind: 'tap' | 'back' | 'buy' | 'reward' | 'error' | 'tic
     if (kind === 'tap') tone(b, o, t, 'triangle', 660, 520, .07, .09, .004);
     else if (kind === 'tick') tone(b, o, t, 'triangle', 880, 880, .035, .04, .002);
     else if (kind === 'back') tone(b, o, t, 'triangle', 440, 330, .07, .12, .004);
-    else if (kind === 'error') { tone(b, o, t, 'square', 220, 200, .05, .14, .004); tone(b, o, t + .1, 'square', 180, 160, .05, .16, .004); }
-    else if (kind === 'buy') { tone(b, o, t, 'square', 988, 988, .05, .07); tone(b, o, t + .07, 'square', 1319, 1319, .05, .07); tone(b, o, t + .14, 'square', 1760, 1760, .05, .2); }
+    else if (kind === 'error') { tone(b, o, t, 'triangle', 220, 200, .05, .14, .004); tone(b, o, t + .1, 'triangle', 180, 160, .05, .16, .004); }
+    else if (kind === 'buy') { tone(b, o, t, 'triangle', 988, 988, .05, .07); tone(b, o, t + .07, 'triangle', 1319, 1319, .05, .07); tone(b, o, t + .14, 'triangle', 1760, 1760, .05, .2); }
     else [784, 988, 1319, 1568].forEach((f, i) => tone(b, o, t + i * .08, 'triangle', f, f, .08, .45, .01));
   } catch { /* no audio */ }
 }
+/** Silences the whole game while a rewarded ad plays (the ad brings its own sound). */
+export function duckForAd(on: boolean) { if (!bus) return; bus.master.gain.setTargetAtTime(on ? 0 : .9, bus.ctx.currentTime, .03); }

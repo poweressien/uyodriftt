@@ -1,7 +1,8 @@
 import Phaser from 'phaser';
 import { getSave, subscribe } from '../../state/store';
 import { requestTilt } from '../systems/Controls';
-import { MAX_CRASHES } from '../data/settings';
+import { MAX_CRASHES, isRace, type Mode } from '../data/settings';
+import { adsAvailable } from '../../monetize/ads';
 const NUM = 'Orbitron, Eurostile, sans-serif', UI = '"Saira Condensed", "Arial Narrow", sans-serif', OR = '#19d3ff', GR = '#3ff2d0', RD = '#ff3560'; // OR = accent (cyan), GR = good, RD = danger
 const PAN = 0x070c1a, ACC = 0x19d3ff;
 /** Chamfered outline points (top-left and bottom-right corners cut) for HUD panels and touch buttons. */
@@ -10,7 +11,7 @@ const chamfer = (x: number, y: number, w: number, h: number, c = 12) => [new Pha
 export class HUDScene extends Phaser.Scene {
   constructor() { super('HUD'); }
   create() {
-    const W = this.scale.width, H = this.scale.height, ev = this.game.events, endless = this.registry.get('mode') === 'endless', touchMode = !!this.registry.get('touchMode');
+    const W = this.scale.width, H = this.scale.height, ev = this.game.events, mode = this.registry.get('mode') as Mode, race = isRace(mode), endless = mode === 'endless' || race, touchMode = !!this.registry.get('touchMode');
     const T = (x: number, y: number, s: string, size: number, color = '#fff', font = UI, ox = 0, oy = 0) => this.add.text(x, y, s, { fontFamily: font, fontSize: `${size}px`, color, fontStyle: font === UI ? '800' : '900', stroke: '#04060c', strokeThickness: font === UI ? 3 : 4 }).setOrigin(ox, oy);
     const set = (t: Phaser.GameObjects.Text, s: string) => { if (t.text !== s) t.setText(s); };
     const g = this.add.graphics(), panel = (x: number, y: number, w: number, h: number, c = 12) => { const p = chamfer(x, y, w, h, c); g.fillStyle(PAN, .72).fillPoints(p, true).lineStyle(2, ACC, .85).strokePoints(p, true); g.fillStyle(ACC, 1).fillRect(x + c, y, 46, 3); };
@@ -20,9 +21,9 @@ export class HUDScene extends Phaser.Scene {
     T(W - 176, 16, 'SPEED', 16, OR); const speed = T(W - 120, 36, '0', 36, '#fff', NUM, 1, 0); T(W - 114, 58, 'KM/H', 16, OR, UI, 0, 0); const lap = T(W - 176, 90, endless ? 'BEST 0m' : 'LAP 0', endless ? 16 : 20, GR);
     const circ = (x: number, y: number, label: string, fn: () => void, size = 22) => { const c = this.add.rectangle(x, y, 44, 44, PAN, .72).setStrokeStyle(2, ACC, .9).setInteractive({ useHandCursor: true }); T(x, y, label, size, '#fff', NUM, .5, .5); c.on('pointerup', fn); return c; };
     circ(W - 34, 34, 'II', () => ev.emit('pause-toggle')); circ(W - 34, 86, 'CAM', () => ev.emit('cam-next'), 14);
-    const pips = endless ? Array.from({ length: MAX_CRASHES }, (_, i) => this.add.rectangle(W / 2 + (i - (MAX_CRASHES - 1) / 2) * 24, 80, 18, 10, ACC).setStrokeStyle(1, 0xffffff, .7)) : [];
-    if (endless) T(W / 2, 94, 'CARS HIT', 12, '#ffffffaa', UI, .5, 0);
-    const live = T(W / 2, 128, '', 30, OR, NUM, .5, .5).setAlpha(0), count = T(W / 2, H / 2 - 130, '', 130, '#fff', NUM, .5, .5).setAlpha(0);
+    const pips = endless && !race ? Array.from({ length: MAX_CRASHES }, (_, i) => this.add.rectangle(W / 2 + (i - (MAX_CRASHES - 1) / 2) * 24, 80, 18, 10, ACC).setStrokeStyle(1, 0xffffff, .7)) : [];
+    if (endless && !race) T(W / 2, 94, 'CARS HIT', 12, '#ffffffaa', UI, .5, 0);
+    const live = T(W / 2, race ? 168 : 128, '', 30, OR, NUM, .5, .5).setAlpha(0), count = T(W / 2, H / 2 - 130, '', 130, '#fff', NUM, .5, .5).setAlpha(0);
     const info = T(W / 2, H - 78, '', 18, '#ffffffdd', UI, .5, .5).setAlpha(0).setWordWrapWidth(W - 100).setAlign('center');
     const sub = this.add.text(W / 2, H - 28, '', { fontFamily: UI, fontStyle: '700', fontSize: '22px', color: '#fff', backgroundColor: '#070c1aee', padding: { x: 14, y: 5 }, wordWrap: { width: W - 380 }, align: 'center' }).setOrigin(.5).setAlpha(0);
     const toast = (msg: string, color = OR) => { const t = T(W / 2, 170, msg, 24, color, NUM, .5, .5).setAlpha(0); this.tweens.add({ targets: t, alpha: 1, y: 148, duration: 180, hold: 800, yoyo: true, onComplete: () => t.destroy() }); };
@@ -35,16 +36,31 @@ export class HUDScene extends Phaser.Scene {
     const goUI: Phaser.GameObjects.GameObject[] = []; let goBtns: ReturnType<typeof mkBtn>[] = [], goTxt: Phaser.GameObjects.Text[] = [];
     if (endless) {
       const gs = this.add.rectangle(W / 2, H / 2, W, H, 0x04060c, .86).setInteractive(), gt = T(W / 2, 96, 'GAME OVER', 60, RD, NUM, .5, .5), sc = T(W / 2, 176, '', 42, '#fff', NUM, .5, .5), d1 = T(W / 2, 226, '', 24, '#ffffffdd', UI, .5, .5), d2 = T(W / 2, 252, '', 20, OR, UI, .5, .5);
-      const bRev = mkBtn(316, '', () => ev.emit('go-revive'), ACC, 360), bRes = mkBtn(378, 'RESTART  (R)', () => ev.emit('go-restart'), 0x1b2a58, 360), bMen = mkBtn(440, 'MAIN MENU  (ESC)', () => ev.emit('go-menu'), 0x6b1230, 360);
-      goBtns = [bRev, bRes, bMen]; goTxt = [sc, d1, d2, gt]; goUI.push(gs, gt, sc, d1, d2, ...bRev.all, ...bRes.all, ...bMen.all); goUI.forEach(o => { (o as any).setVisible(false); (o as any).setDepth(45); });
-      const onOver = (r: { score: number; dist: number; best: number; cost: number; coins: number; crashes: number; max: number }) => {
-        goUI.forEach(o => (o as any).setVisible(true)); sc.setText(r.score.toLocaleString()); d1.setText(`${r.dist.toLocaleString()} m driven  ·  ${r.crashes}/${r.max} cars hit`); d2.setText(r.dist >= r.best && r.dist > 0 ? 'NEW BEST DISTANCE!' : `Best: ${r.best.toLocaleString()} m`);
+      const bAd = mkBtn(292, 'WATCH AD  ·  FREE REVIVE', () => ev.emit('ad-revive-req'), 0x14b87a, 360), bRev = mkBtn(352, '', () => ev.emit('go-revive'), ACC, 360), bRes = mkBtn(412, 'RESTART  (R)', () => ev.emit('go-restart'), 0x1b2a58, 360), bMen = mkBtn(472, 'MAIN MENU  (ESC)', () => ev.emit('go-menu'), 0x6b1230, 360);
+      goBtns = [bRev, bRes, bMen, bAd]; goTxt = [sc, d1, d2, gt]; goUI.push(gs, gt, sc, d1, d2, ...bAd.all, ...bRev.all, ...bRes.all, ...bMen.all); goUI.forEach(o => { (o as any).setVisible(false); (o as any).setDepth(45); });
+      const onOver = (r: { score: number; dist: number; best: number; cost: number; coins: number; crashes: number; max: number; race?: boolean; final?: boolean; kos?: number; adLeft?: number }) => {
+        goUI.forEach(o => (o as any).setVisible(true)); sc.setText(r.score.toLocaleString()); gt.setText(r.race ? 'WRECKED' : 'GAME OVER');
+        d1.setText(r.race ? `${r.dist.toLocaleString()} m driven  ·  ${r.kos ?? 0} knockouts` : `${r.dist.toLocaleString()} m driven  ·  ${r.crashes}/${r.max} cars hit`); d2.setText(r.race ? (r.final ? 'Your friend wins this round' : 'Revive to get back in the race') : r.dist >= r.best && r.dist > 0 ? 'NEW BEST DISTANCE!' : `Best: ${r.best.toLocaleString()} m`);
+        const adOk = adsAvailable() && (r.adLeft ?? 3) > 0 && !r.final; goBtns[3].all.forEach(o => (o as any).setVisible(adOk));
+        if (r.race) { goBtns[1].t.setText('GIVE UP  ·  SEE RESULTS'); goBtns[1].r.removeAllListeners('pointerup').on('pointerup', () => ev.emit('go-results')); }
+        if (r.final) { goBtns[0].all.forEach(o => (o as any).setVisible(false)); goBtns[2].all.forEach(o => (o as any).setVisible(false)); goBtns[1].all.forEach(o => (o as any).setVisible(false)); }
         const can = r.coins >= r.cost; goBtns[0].t.setText(can ? `REVIVE  ·  ${r.cost.toLocaleString()} COINS  (ENTER)` : `REVIVE  ·  ${r.cost.toLocaleString()} COINS  (HAVE ${r.coins.toLocaleString()})`); goBtns[0].r.setFillStyle(can ? ACC : 0x2a3350); goBtns[0].t.setColor(can ? '#02122e' : '#7f8db0');
         goUI.forEach(o => { (o as any).alpha = 0; this.tweens.add({ targets: o, alpha: 1, duration: 350 }); });
       };
       ev.on('gameover', onOver); ev.on('revived', () => goUI.forEach(o => (o as any).setVisible(false))); this.events.once('shutdown', () => { ev.off('gameover', onOver); ev.removeAllListeners('revived'); });
     }
 
+    // ---- race panel (rank, hit points, progress)
+    if (race) {
+      const rg = this.add.graphics().setDepth(4), rPlace = T(W / 2, 96, '', 26, '#fff', NUM, .5, .5), rLine = T(W / 2, 124, '', 17, OR, UI, .5, .5), hpT = T(W / 2 - 128, 66, 'HP', 13, '#ffffffcc', NUM, .5, .5);
+      const ord = (n: number) => (n === 1 ? '1ST' : n === 2 ? '2ND' : n === 3 ? '3RD' : `${n}TH`);
+      const onRace = (r: { place: number; of: number; hp: number; line: string; prog: number; dots: number[]; kos: number }) => {
+        set(rPlace, `${ord(r.place)}  /  ${r.of}`); set(rLine, r.line); rg.clear(); const bw = 200, x = W / 2 - bw / 2, y = 61, f = Math.max(0, Math.min(1, r.hp / 100));
+        rg.fillStyle(0x000000, .6).fillRect(x - 2, y - 2, bw + 4, 14).fillStyle(f > .5 ? 0x19d3ff : f > .25 ? 0xffd23f : 0xff3560, 1).fillRect(x, y, bw * f, 10);
+        if (r.prog >= 0) { const px = W / 2 - 180, py = 146, pw = 360; rg.fillStyle(0x000000, .6).fillRect(px - 2, py - 2, pw + 4, 12).fillStyle(0x1b2a58, 1).fillRect(px, py, pw, 8); rg.fillStyle(0xff3560, 1); r.dots.forEach(d => rg.fillRect(px + pw * d - 3, py - 4, 6, 16)); rg.fillStyle(0xffffff, 1).fillRect(px + pw * r.prog - 4, py - 6, 8, 20); rg.fillStyle(0xffffff, 1).fillRect(px + pw - 3, py - 8, 4, 24); }
+      };
+      ev.on('race', onRace); this.events.once('shutdown', () => ev.off('race', onRace));
+    }
     // ---- touch controls: steering arrows OR tilt, plus brake + drift. Throttle is automatic.
     // Buttons are read from every finger each frame (rectangle hit-test), so you can slide from < to > without lifting and use two thumbs freely.
     if (touchMode) {
@@ -70,7 +86,7 @@ export class HUDScene extends Phaser.Scene {
     // ---- run cash + live race score
     const cash = T(26, 116, 'COINS +0', 20, '#ffd23f'), mpTxt = T(W / 2, 68, '', 22, '#fff', UI, .5, .5).setAlpha(0);
     const onCoin = (n: number) => { set(cash, `COINS +${n.toLocaleString()}`); this.tweens.killTweensOf(cash); cash.setScale(1.25); this.tweens.add({ targets: cash, scale: 1, duration: 220 }); };
-    const hint = (i: { district: string; weather: string; car: string; touchMode: boolean }) => `${i.district.toUpperCase()}  ·  ${i.weather.toUpperCase()}  ·  ${i.car.toUpperCase()}${i.touchMode ? '' : `\nW/S gas-brake  ·  A/D steer  ·  SPACE handbrake = DRIFT  ·  C camera  ·  H horn  ·  ESC pause${endless ? '\nHit 5 cars and it is game over' : ''}`}`;
+    const hint = (i: { district: string; weather: string; car: string; touchMode: boolean }) => `${i.district.toUpperCase()}  ·  ${i.weather.toUpperCase()}  ·  ${i.car.toUpperCase()}${i.touchMode ? '' : `\nW/S gas-brake  ·  A/D steer  ·  SPACE handbrake = DRIFT  ·  C camera  ·  H horn  ·  ESC pause${race ? '\nRam rivals to wreck them. Your car has hit points.' : endless ? '\nHit 5 cars and it is game over' : ''}`}`;
     const onInfo = (i: { district: string; weather: string; car: string; touchMode: boolean }) => { set(info, hint(i)); this.tweens.add({ targets: info, alpha: 1, duration: 300, hold: 4200, yoyo: true }); };
     let lastLive = 0, lastLiveT = 0;
     const onStats = (s: any) => {

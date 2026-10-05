@@ -54,3 +54,33 @@ Touch: auto-throttle. Arrows or Tilt steering, BRAKE, DRIFT (handbrake), CAM. Pr
 - Handling retuned (more grip and steering lock at speed, quicker steering ramp): turn radius at 120 km/h went from 83 m to 36 m.
 - New turbo-racing UI: dark carbon, electric cyan and hot red, chamfered panels, slanted buttons, Orbitron + Saira type (bundled, works offline).
 - Night view of the Ibom Plaza roundabout as the home screen, START button, tabbed Settings, restyled HUD and touch controls.
+
+## v4.3: missions, race modes, gas, shop
+
+- Engine sound is off by default (Settings > Audio to turn it on).
+- Race modes (solo or live with a friend): **LGA Journey** (first to the finish, Uyo to Etinan up to Eket to Ikot Abasi), **Elimination** (last place is knocked out every 18 s), **Demolition** (damage rivals, 3 KOs win). Cars have 100 HP; damage cuts power. Prizes by finishing place.
+- **Gas**: 7 bars, 1 per run or race. At 0 it refills after 3 h (90 min with Turbo Pass) or watch an ad for +1.
+- **Revive** a wrecked car with coins or by watching an ad (max 3 ads per run).
+- **Upgrades** with coins and parts; levels 1 to 3 can be free via ad.
+- **Missions** daily and weekly, claim x2 with an ad.
+- **Shop**: coin packs, Full Tank, Turbo Pass, Style Pack, premium cars (S-Class, Escalade), free coins via ads.
+- Live race **room codes** (5 letters) when the API has Upstash configured; otherwise the copy/paste codes still work.
+
+### Monetization setup (do this before going live)
+
+1. Copy `.env.example` values into Vercel project env vars. Rebuild after changing any `VITE_` value.
+2. **Payments**: create a Paystack account, set `VITE_PAYSTACK_KEY` (public) and `PAYSTACK_SECRET_KEY` (server). Every purchase is verified by `/api/verify` (status, NGN, amount, product) before anything is granted. Unconfirmed payments are retried on next launch.
+3. **Replay protection**: add an Upstash Redis (`UPSTASH_REDIS_REST_URL/TOKEN`). Without it a payment reference can be reused. Same Upstash also powers room codes.
+4. **Ads, web**: AdSense for Games / H5 rewarded ads needs an approved account; set `VITE_ADS_MODE=adsense` and `VITE_ADSENSE_CLIENT`. Use `VITE_ADSENSE_TEST=1` while testing.
+5. **Ads, Android**: wrap with Capacitor, add an AdMob plugin, set `VITE_ADS_MODE=admob` and the rewarded unit id. Use test ids first.
+6. With `VITE_ADS_MODE=none` in production the ad buttons are disabled and nothing is given free. `mock` is for testing only; never ship it.
+7. Prices live in `src/monetize/products.ts` and `api/_products.js`. Change both together (server prices are in kobo).
+
+Honest limits: progress lives in the player's browser, so a determined cheater can edit local coins. Paid items are protected by server verification, but there are no accounts, so purchases do not follow a player to another device.
+
+## v4.4: cars, upgrades, drift, menu
+
+- **Menu** now leads with the six ways to play: Challenge, Online Race, Friend Link, Classic, Endless, Career. Garage, Shop, Missions, Trophies, Ranks, Board, Settings and Quit are in the small dock.
+- **New roster** (27 cars, each with its own 3D body, top-view size and wheelbase): Keke NAPEP, Danfo Bus, Toyota HiAce Mini Bus, Toyota Hilux, Nissan Altima / Patrol / 350Z, BMW 330i / M4, Chevrolet Tahoe / Camaro SS, Lexus LX 570, Luxury Coach, plus the earlier Toyota, Lexus, Mercedes, Range Rover and the two premium cars. Bodies: sedan, coupe, SUV, pickup, minibus, coach, keke.
+- **Upgrades now do something you can feel.** Before, engine and turbo power was cancelled by the drag calculation, so top speed never changed. Now every level changes the physics (engine +10% power, tyres +7% grip, brakes +10% braking, steering +7% lock, transmission +3% top speed and faster shifts, suspension steadier body and less crash damage, turbo power plus wheelspin kick). The Garage shows the measured numbers (top speed, 0 to 100, 100 to 0, grip, steering lock) with the change from stock, and each purchase pops up exactly what it changed. Measured with the real physics model: a Corolla at all level 5 goes from 186 to 241 km/h, 3.7 to 2.4 s to 100, and 30 m to 20 m braking.
+- **Drift feel**: tyre model retuned so a car holds a slide at 25 to 30 degrees with the throttle, keeps most of its speed through the drift, and recovers cleanly. Light rear-drive coupes (350Z, M4, Camaro) slide easily; the keke spins on a coin; the coach and the danfo are heavy and slow to rotate.

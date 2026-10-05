@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { RANKS, rankFor, unlockLines } from '../game/data/progression';
 import { DISTRICTS } from '../game/data/districts';
 import { VEHICLES } from '../game/data/vehicles';
+import { watchAd } from '../monetize/watch';
+import { adsAvailable } from '../monetize/ads';
 import { VIEWS, VIEW_LABEL } from '../game/data/settings';
 import { requestTilt, hasTilt } from '../game/systems/Controls';
 import { useSave, setSettings, resetSave, missionView, claimMission, achievementView, topRuns, districtName, Period } from '../state/store';
@@ -12,14 +14,14 @@ import AudioPanel from './AudioPanel';
 const Wrap = ({ children }: { children: React.ReactNode }) => <div className="screen">{children}</div>;
 export function Missions({ onBack }: { onBack: () => void }) {
   const s = useSave(), list = missionView(s);
-  const claim = (id: string) => { try { const r = claimMission(id); pushPopup({ kind: 'reward', title: 'Mission complete', body: `+${r.coins} coins${r.parts ? `, +${r.parts} parts` : ''}` }); } catch (e: any) { pushPopup({ kind: 'reward', title: e.message }); } };
+  const claim = async (id: string, dbl = false) => { if (dbl && !(await watchAd('mission_x2'))) return; try { const r = claimMission(id, dbl); pushPopup({ kind: 'reward', title: dbl ? 'Mission complete: DOUBLED' : 'Mission complete', body: `+${r.coins.toLocaleString()} coins${r.parts ? `, +${r.parts} parts` : ''}` }); } catch (e: any) { pushPopup({ kind: 'reward', title: e.message }); } };
   return <Wrap><Header title="MISSIONS" onBack={onBack} right={<Coins s={s} />} />
     {(['daily', 'weekly', 'seasonal'] as const).map(k => <div key={k} className="list"><h3 className="gold" style={{ textTransform: 'capitalize' }}>{k}</h3>
       {list.filter(m => m.kind === k).map(m => { const done = m.progress >= m.target; return (
         <div key={m.id} className="panel"><div className="row cond"><b>{m.label}</b><span className="gold">{m.coins.toLocaleString()} coins{m.parts ? ` · ${m.parts} parts` : ''}</span></div>
           <div className={`bar${done ? ' g' : ''}`}><i style={{ width: `${Math.min(100, m.progress / m.target * 100)}%` }} /></div>
           <div className="row"><span className="muted">{Math.min(m.progress, m.target).toLocaleString()} / {m.target.toLocaleString()}</span>
-            {m.claimed ? <span className="muted">Claimed</span> : <button className="btn sm primary" disabled={!done} onClick={() => claim(m.id)}>Claim</button>}</div></div>); })}</div>)}
+            {m.claimed ? <span className="muted">Claimed</span> : <span className="chips">{done && adsAvailable() && <button className="btn sm" onClick={() => void claim(m.id, true)}>{'\u25B6'} Claim x2</button>}<button className="btn sm primary" disabled={!done} onClick={() => void claim(m.id)}>Claim</button></span>}</div></div>); })}</div>)}
   </Wrap>;
 }
 export function Achievements({ onBack }: { onBack: () => void }) {

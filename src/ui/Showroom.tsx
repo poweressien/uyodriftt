@@ -6,7 +6,7 @@ const WHEELS: Record<string, number> = { stock: 0x9aa0a6, sport: 0x2a2d30, chrom
 /** Saved car -> 3D look. */
 export function lookFor(vehicleId: string, car?: CarLook): Look3D {
   const v = VEHICLES.find(x => x.id === vehicleId) ?? VEHICLES[0];
-  return { kind: v.kind, color: car?.paint ? parseInt(car.paint.slice(1), 16) : v.color, decal: car?.decal ?? 'none', wheel: WHEELS[car?.wheels ?? 'stock'], glass: .55 + (car?.tint ?? 0) * .15 };
+  return { kind: v.kind, color: car?.paint ? parseInt(car.paint.slice(1), 16) : v.color, decal: car?.decal && car.decal !== 'none' ? car.decal : v.livery ?? 'none', wheel: WHEELS[car?.wheels ?? 'stock'], glass: .55 + (car?.tint ?? 0) * .15 };
 }
 /** 3D turntable. three.js is loaded lazily so the first paint of the menu stays fast. */
 export default function Showroom({ look, compact, fallback }: { look: Look3D; compact?: boolean; fallback?: ReactNode }) {

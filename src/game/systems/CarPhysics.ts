@@ -3,7 +3,7 @@ export interface Inputs { throttle: number; brake: boolean; steer: number; hand:
 
 /** Arcade-leaning tuning: more tyre grip than a road car, more steering lock kept at speed, slightly stronger front axle (lively turn-in). */
 const MU_K = 1.7, LOCK_K = 1.9, LOCK_0 = .2, FRONT_K = 1.1;
-const G = 9.81, CRR = .015, L = 2.7, A = 1.2, B = L - A, H = .5, WHEEL_R = .33; // wheelbase, CG->front axle, CG->rear axle, CG height (m)
+const G = 9.81, CRR = .015, H = .5, WHEEL_R = .33; // CG height (m); wheelbase L comes from the car (Phys.L), CG sits 44% back from the front axle
 const GEARS = [0, .13, .27, .44, .62, .80, 1.01];                                // upper speed fraction of gears 1..6
 const clamp = (v: number, lo: number, hi: number) => v < lo ? lo : v > hi ? hi : v;
 /** Saturating tyre curve: rises with slip angle, peaks near 10 degrees, then falls away a little. That fall-off is what makes a slide feel like a slide. */
@@ -23,6 +23,7 @@ export class CarPhysics {
   w = 0;                  // yaw rate, rad/s
   delta = 0;              // front wheel angle, rad
   ax = 0; ay = 0;         // smoothed body accelerations (m/s^2), used for weight transfer and 3D pitch / roll
+  dr = 0;                 // power-slide state (0..1): throttle keeps a started slide going, lifting off brings the grip back
   hf = 0;                 // handbrake-drift memory (0..1): the stability assist stays out of the way while a drift is being thrown and fades back in afterwards
   gear = 1; rpm = .22; wheelSlip = 0; private shiftT = 0; private prevGear = 1; private u = 0;
   constructor(public p: Phys) {}
@@ -40,7 +41,7 @@ export class CarPhysics {
   }
 
   private sub(dt: number, inp: Inputs, off: boolean, gripMul: number) {
-    const p = this.p, m = p.mass;
+    const p = this.p, m = p.mass, L = p.L, A = L * .444, B = L - A;
     if (this.spin) { this.w += this.spin; this.spin = 0; }
     let c = Math.cos(this.heading), s = Math.sin(this.heading);
     let u = (this.vx * c + this.vy * s) / PPM, v = (-this.vx * s + this.vy * c) / PPM;  // world px/s -> body m/s
@@ -52,11 +53,16 @@ export class CarPhysics {
     const beta = au > 4 ? Math.atan2(v, au) * sg : 0, bx = Math.sign(beta) * Math.max(0, Math.abs(beta) - .06);
     if (bx) d += clamp(bx * p.driftAssist * 1.6, -p.steerLock * .8, p.steerLock * .8) * (inp.steer * bx > 0 ? .35 : 1);
     d = clamp(d, -p.steerLock, p.steerLock); this.delta += (d - this.delta) * Math.min(1, dt * 26); const dl = this.delta;
-    const hOn = inp.hand && au > .5; this.hf += ((hOn ? 1 : 0) - this.hf) * Math.min(1, dt * (hOn ? 14 : 1.1)); const stab = 1 - this.hf;
+    const hOn = inp.hand && au > .5; this.hf += ((hOn ? 1 : 0) - this.hf) * Math.min(1, dt * (hOn ? 14 : 1.1));
+    // power-slide: a hard turn at speed with the pedal down, or an existing slide with the pedal down, tips the rear into a held drift; lift off and it straightens up
+    const dcN = clamp((p.driftAssist - .35) / .5, 0, 1), commit = inp.throttle > .75 && Math.abs(this.steer) > .72 && au > 13, sliding = Math.abs(beta) > .15 && inp.throttle > .3 && au > 8;
+    if (sliding) this.dr += (1 - this.dr) * Math.min(1, dt * 7); else if (commit) this.dr += (.8 - this.dr) * Math.min(1, dt * (.9 + dcN * 2)) * (this.dr < .8 ? 1 : 0);
+    else this.dr -= this.dr * Math.min(1, dt * (inp.throttle < .25 || au < 6 ? 5 : Math.abs(beta) < .12 ? 2.2 : .6));
+    const stab = 1 - Math.max(this.hf, this.dr * .9);
 
     // ---- engine + automatic gearbox
     let gear = this.gear; if (gear < 6 && vfrac > GEARS[gear]) gear++; else if (gear > 1 && vfrac < GEARS[gear - 1] * .86) gear--; // hysteresis: no hunting at a shift point
-    if (gear > this.prevGear) this.shiftT = .14; this.prevGear = gear;
+    if (gear > this.prevGear) this.shiftT = .14 * p.shift; this.prevGear = gear;
     this.gear = gear; if (this.shiftT > 0) this.shiftT -= dt;
     const lo = GEARS[gear - 1], hi = GEARS[gear], rpmT = inp.throttle > 0 || au > 1 ? .28 + .72 * clamp((vfrac - lo) / (hi - lo), 0, 1) : .22;
     this.rpm += (rpmT - this.rpm) * Math.min(1, dt * 14);
@@ -66,7 +72,7 @@ export class CarPhysics {
     const reverse = inp.brake && u < 1.2 && u > -p.vmax * .3 ? -m * 4.2 : 0;
 
     // ---- vertical loads with weight transfer
-    const Fzf = clamp(m * G * B / L - m * this.ax * H / L * .55, m * G * .2, m * G * .8), Fzr = m * G - Fzf;
+    const Fzf = clamp(m * G * B / L - m * this.ax * H / L * .55 * p.xfer, m * G * .2, m * G * .8), Fzr = m * G - Fzf;
 
     // ---- longitudinal forces
     const hand = inp.hand && au > .5, hk = clamp(1 - (Math.abs(beta) - .5) / .35, 0, 1), muR = mu * Fzr * 1.12;                             // driven axle runs sticky tyres
@@ -81,8 +87,8 @@ export class CarPhysics {
     const ue = Math.max(au, 2.5);
     const af = Math.atan2(v + A * this.w, ue) - dl * sg, ar = Math.atan2(v - B * this.w, ue);
     const cf = Math.sqrt(Math.max(.1, 1 - (Math.abs(Fxf) / (mu * Fzf)) ** 2)), cr = Math.sqrt(1 - (used * .6) ** 2);
-    const rearGrip = (hand ? p.hbGrip * hk + (1 + .1 * stab) * (1 - hk) : 1 + .1 * stab) * (1 - this.wheelSlip * .3);
-    const Fyf = -mu * FRONT_K * Fzf * tyre(af) * cf, Fyr = -mu * Fzr * tyre(ar) * cr * rearGrip;
+    const rearGrip = (hand ? p.hbGrip * hk + (1 + .1 * stab) * (1 - hk) : 1 + .1 * stab) * (1 - this.wheelSlip * .3) * (1 - this.dr * (.09 + .22 * inp.throttle) * (.7 + .3 * dcN) * Math.min(1.25, p.kick));
+    const Fyf = -mu * FRONT_K * p.fk * Fzf * tyre(af) * cf, Fyr = -mu * Fzr * tyre(ar) * cr * rearGrip;
 
     // ---- resistance (always opposes motion)
     const engBrake = inp.throttle > 0 || inp.brake ? 0 : m * (.7 + .9 * vfrac) * Math.min(1, au / 1.5);   // lift off and the engine slows you
@@ -93,7 +99,7 @@ export class CarPhysics {
         // stability assist: pull the yaw rate towards what the wheel is asking for (capped at what the tyres can give) and weathercock a sliding car back in line
     const wCap = 1.25 * mu * G / Math.max(au, 4), wT = clamp(u * Math.tan(dl) / L, -wCap, wCap), brk = beta ? Math.sign(beta) * Math.max(0, Math.abs(beta) - .25) : 0;
     const Mst = Iz * stab * (au > 3 ? clamp(au / 10, 0, 1) : 0) * (5 * (wT - this.w) + 9 * brk * (1 - .6 * this.hf)) + Iz * 8 * (beta ? Math.sign(beta) * Math.max(0, Math.abs(beta) - .8) : 0); // second term: slip-angle limiter, a drift can be held but never becomes a spin
-    const Fx = Fxf * cd - Fyf * sd + Fxr + Fxrb + Fres + reverse, Fy = Fyf * cd + Fxf * sd + Fyr, Mz = A * (Fyf * cd + Fxf * sd) - B * Fyr + Mst;
+    const Fx = Fxf * cd - Fyf * sd + Fxr + Fxrb + Fres + reverse + this.dr * inp.throttle * m * 1.4 * (au > 6 ? 1 : 0), /* a held drift carries its speed */ Fy = Fyf * cd + Fxf * sd + Fyr, Mz = A * (Fyf * cd + Fxf * sd) - B * Fyr + Mst;
     this.ax += (Fx / m - this.ax) * Math.min(1, dt * 8); this.ay += (Fy / m - this.ay) * Math.min(1, dt * 8);
     const u0 = u; u += (Fx / m + this.w * v) * dt; v += (Fy / m - this.w * u0) * dt; this.w += Mz / Iz * dt;
     if (u0 * u < 0 && Fdrive === 0 && reverse === 0) u = 0;                              // brakes / drag stop the car, they never reverse it

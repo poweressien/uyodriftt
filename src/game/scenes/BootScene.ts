@@ -8,6 +8,6 @@ export class BootScene extends Phaser.Scene {
     const run = this.registry.get('runConfig');
     this.registry.set('touch', { left: false, right: false, brake: false, hand: false });
     this.registry.set('touchMode', (typeof matchMedia !== 'undefined' && matchMedia('(pointer:coarse)').matches) || /[?&]touch=1/.test(location.search));
-    this.scene.start(run?.mode === 'endless' ? 'Endless' : 'Drive', run);
+    this.scene.start(run?.mode && run.mode !== 'drift' ? 'Endless' : 'Drive', run);
   }
 }

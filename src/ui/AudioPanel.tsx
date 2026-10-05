@@ -5,7 +5,7 @@ import type { Settings } from '../game/data/settings';
 
 type Ch = 'music' | 'engine' | 'radio' | 'sfx';
 const CH: { k: Ch; label: string; hint: string }[] = [
-  { k: 'engine', label: 'Car sound', hint: 'Engine, tyres and wind' },
+  { k: 'engine', label: 'Car sound', hint: 'Engine hum. Off by default' },
   { k: 'radio', label: 'IBOM radio', hint: 'The pidgin voice on the radio' },
   { k: 'music', label: 'Music', hint: 'Background beats' },
   { k: 'sfx', label: 'Other sounds', hint: 'Crashes, horn, coins, menus' },

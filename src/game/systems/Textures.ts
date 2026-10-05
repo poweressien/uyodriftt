@@ -1,3 +1,4 @@
+import { BODY, type Body } from '../data/vehicles';
 import Phaser from 'phaser';
 const G = (s: Phaser.Scene) => s.make.graphics({ x: 0, y: 0 }, false);
 const shade = (c: number, f: number) => { const r = Math.min(255, ((c >> 16) & 255) * f), g = Math.min(255, ((c >> 8) & 255) * f), b = Math.min(255, (c & 255) * f); return (r << 16) | (g << 8) | b; };
@@ -71,6 +72,7 @@ export function makeTextures(s: Phaser.Scene) {
   decal('decal-stripes', c => { c.fillStyle = 'rgba(255,255,255,.93)'; c.fillRect(0, 11.2, 64, 3); c.fillRect(0, 15.8, 64, 3); });
   decal('decal-flames', c => { c.fillStyle = '#ff8c1a'; for (const [a, b, d] of [[8, 11, 13], [17, 19, 22], [12, 15, 18]]) { c.beginPath(); c.moveTo(64, a); c.lineTo(38 + (b - 11) , b); c.lineTo(64, d); c.closePath(); c.fill(); } c.fillStyle = '#ffd21f'; c.beginPath(); c.moveTo(64, 11); c.lineTo(48, 13); c.lineTo(64, 15); c.closePath(); c.fill(); });
   decal('decal-ibom-pride', c => { c.fillStyle = '#0f8a45'; c.fillRect(36, 0, 8, 30); c.fillStyle = '#fff'; c.fillRect(44, 0, 8, 30); c.fillStyle = '#ff8c1a'; c.fillRect(52, 0, 8, 30); });
+  decal('decal-danfo', c => { c.fillStyle = 'rgba(10,10,10,.85)'; c.fillRect(0, 12.6, 64, 4.8); c.fillStyle = 'rgba(10,10,10,.6)'; c.fillRect(0, 2.2, 64, 1.4); c.fillRect(0, 26.4, 64, 1.4); });
   decal('decal-bus', c => { c.fillStyle = 'rgba(0,0,0,.16)'; for (const x of [14, 28, 42]) { rr(c, x, 10, 9, 10, 1.5); c.fill(); } c.fillStyle = 'rgba(0,0,0,.65)'; c.fillRect(0, 13.4, 64, 3.2); });
   paint(s, 'car-shadow', 72, 34, c => { for (let i = 0; i < 6; i++) { c.fillStyle = 'rgba(0,0,0,.075)'; c.beginPath(); c.ellipse(35, 17, 34 - i * 1.3, 15.5 - i * .7, 0, 0, 7); c.fill(); } });
 
@@ -95,14 +97,14 @@ export function makeGrass(s: Phaser.Scene, key: string, base: number) {
   for (let i = 0; i < 9; i++) blob(r.between(0, S), r.between(0, S), 2, r.pick([0xff8c1a, 0xffffff, 0xffd21f]), 1);
   g.generateTexture(key, S, S); g.destroy();
 }
-export interface CarOpts { color: number; decal?: string; glass?: number; wheel?: number; kind?: 'sedan' | 'suv' | 'bus'; x?: number; y?: number }
+export interface CarOpts { color: number; decal?: string; glass?: number; wheel?: number; kind?: Body; x?: number; y?: number }
 export const bodyShade = shade;
 /** Layered car: shadow, wheels, tinted body, decal, gloss, glass, lights, brake glow. The container exposes `body` and `brake` via getData. */
 export function buildCar(s: Phaser.Scene, o: CarOpts) {
   const im = (k: string, x = 0, y = 0) => s.add.image(x, y, k).setScale(1 / S), body = im('car-body').setTint(o.color), brake = im('car-brake').setAlpha(0).setBlendMode(Phaser.BlendModes.ADD);
   const parts: Phaser.GameObjects.GameObject[] = [im('car-shadow', 3, 4), im('car-wheels').setTint(o.wheel ?? WHEEL_TINT.stock), body];
-  if (o.decal && o.decal !== 'none') parts.push(im(`decal-${o.decal}`)); if (o.kind === 'bus') parts.push(im('decal-bus'));
+  if (o.decal && o.decal !== 'none') parts.push(im(`decal-${o.decal}`)); if (o.kind === 'bus' || o.kind === 'minibus') parts.push(im('decal-bus'));
   parts.push(im('car-gloss'), im('car-glass').setAlpha(o.glass ?? .7), im('car-detail'), brake);
   const c = s.add.container(o.x ?? 0, o.y ?? 0, parts); c.setData('body', body); c.setData('brake', brake); c.setData('color', o.color);
-  if (o.kind === 'suv') c.setScale(1.1, 1.16); else if (o.kind === 'bus') c.setScale(1.5, 1.22); return c;
+  const b = BODY[o.kind ?? 'sedan']; c.setScale(b.sx, b.sy); return c;
 }
