@@ -7,7 +7,7 @@ android {
         applicationId "ng.uyodrift.game"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode (System.getenv("VERSION_CODE") ?: "1").toInteger()
+        versionCode Integer.parseInt(System.getenv("VERSION_CODE") ?: "1")
         versionName "4.5.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
@@ -32,6 +32,15 @@ android {
             if (System.getenv("KEYSTORE_FILE")) signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+// Fail early, with a clear message, if the web build was not copied into the app. Without it the app opens to "Webpage not available".
+tasks.matching { it.name == 'preBuild' }.configureEach {
+    doFirst {
+        if (!project.file('src/main/assets/public/index.html').exists()) {
+            throw new GradleException("The web build is missing. In the project root (not the android folder) run:  npm run build   then   npx cap sync android   and build again.")
         }
     }
 }
