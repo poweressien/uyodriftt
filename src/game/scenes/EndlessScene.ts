@@ -18,7 +18,7 @@ import { CameraRig } from '../systems/CameraRig';
 import { boxHit, resolveHit } from '../systems/Collision';
 import { HazardField } from '../systems/Hazards';
 import { ImpactFx } from '../systems/ImpactFx';
-import { tilt, SteerShaper } from '../systems/Controls';
+import { tilt, SteerShaper, GearInput } from '../systems/Controls';
 import { CoinField, COIN_VALUE, COIN_RADIUS } from '../systems/Pickups';
 import { PPM, BODY, type Body } from '../data/vehicles';
 import { getSave, setSettings, spendCoins, addCoins, grantLive } from '../../state/store';
@@ -36,7 +36,7 @@ interface ECar { c: Phaser.GameObjects.Container; body: Phaser.GameObjects.Image
 /** A rival on the road: a deterministic bot (journey/elimination), a chasing bot (demolition) or the friend in a live race. */
 interface Racer { id: string; name: string; human: boolean; dyn: boolean; bot?: BotP; c: Phaser.GameObjects.Container; body: Phaser.GameObjects.Image; kind: Body; color: number; l: number; w: number; mass: number;
   x: number; y: number; h: number; vx: number; vy: number; spin: number; tx: number; ty: number; th: number; lastMsg: number; startY: number; prog: number; hp: number; out: boolean; outT?: number; finT?: number; kos: number; cd: number; has: boolean; delay: number; lastHit: number; wrecked: boolean }
-type Touch = { left: boolean; right: boolean; brake: boolean; hand: boolean };
+type Touch = { left: boolean; right: boolean; brake: boolean; hand: boolean; gup?: boolean; gdn?: boolean };
 const MASSK: Record<Body, number> = { keke: .6, coupe: .95, sedan: 1, suv: 1.35, pickup: 1.4, minibus: 1.95, bus: 2.6 };
 const SPEC = Object.fromEntries((Object.keys(BODY) as Body[]).map(k => [k, { l: BODY[k].pl, w: BODY[k].pw, mass: MASSK[k] }])) as Record<Body, { l: number; w: number; mass: number }>;
 const POOL: [Body, number][] = [['sedan', 10], ['suv', 6], ['pickup', 3], ['minibus', 4], ['keke', 4], ['coupe', 3], ['bus', 3]], ROLL: [Body, number][] = [['sedan', .34], ['suv', .5], ['pickup', .6], ['minibus', .74], ['keke', .86], ['coupe', .92], ['bus', 1]], SLOW: Partial<Record<Body, number>> = { bus: 90, minibus: 95, keke: 80, pickup: 105 };
@@ -47,7 +47,7 @@ export class EndlessScene extends Phaser.Scene {
   private car!: Phaser.GameObjects.Container; private carBody!: Phaser.GameObjects.Image; private carBrake!: Phaser.GameObjects.Image; private beam?: Phaser.GameObjects.Image; private ground!: Phaser.GameObjects.TileSprite; private road!: Phaser.GameObjects.TileSprite;
   private smoke!: Phaser.GameObjects.Particles.ParticleEmitter; private rig!: CameraRig; private fx!: ImpactFx; private haz!: HazardField; private audio!: GameAudio; private radio!: Radio;
   private cars: ECar[] = []; private chunks = new Map<number, Phaser.GameObjects.GameObject[]>(); private skids: Phaser.GameObjects.Image[] = []; private skidAge: number[] = []; private skidI = 0;
-  private keys!: Record<string, Phaser.Input.Keyboard.Key>; private touch!: Touch; private touchMode = false; private baseColor = 0xffffff; private mass = 1; private pl = 62; private pw = 27;
+  private keys!: Record<string, Phaser.Input.Keyboard.Key>; private touch!: Touch; private gears = new GearInput(); private touchMode = false; private baseColor = 0xffffff; private mass = 1; private pl = 62; private pw = 27;
   private countdown = COUNTDOWN; private lastCount = 4; private paused = false; private over = false; private banked = false; private tiltChecked = false;
   private rk: RaceKind | null = null; private racers: Racer[] = []; private hp = HP_MAX; private kos = 0; private rams = 0; private wrecked = false; private raceDone = false; private routeM = 0; private myId = 'h'; private myLane = 1; private elimNext = 0; private elimCount = 0; private myPlace = 0; private adRevives = 0; private hudRaceT = 0;
   private mp: MpSession | null = null; private mpWait = false; private mpWaited = 0; private mpSendT = 0; private meReady = false; private oppReady = false; private mpOffs: (() => void)[] = []; private oppName = ''; private oppFin: { t: number; sc: number } | null = null; private myFin: number | undefined; private raceMs = 0;
@@ -131,7 +131,7 @@ export class EndlessScene extends Phaser.Scene {
     if (this.routeM) { const rt = routeById(this.cfg.race!.route); this.finishLine(-this.routeM * 12, `WELCOME TO ${rt.to.toUpperCase()} LGA`); this.r3d?.setFinish(-this.routeM * 12, `WELCOME TO ${rt.to.toUpperCase()} LGA`); }
     this.applyView(getSave().settings.view);
     this.add.rectangle(W / 2, H / 2, W * 3, H * 3, 0x02140b, (1 - vis) * .95).setScrollFactor(0).setDepth(20);
-    this.keys = this.input.keyboard!.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT,SPACE,SHIFT,H,M,C,V,R,ENTER,ESC,P') as Record<string, Phaser.Input.Keyboard.Key>;
+    this.keys = this.input.keyboard!.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT,SPACE,SHIFT,E,Q,G,H,M,C,V,R,ENTER,ESC,P') as Record<string, Phaser.Input.Keyboard.Key>;
     this.touch = this.registry.get('touch') as Touch; this.touchMode = !!this.registry.get('touchMode'); this.input.addPointer(3); if (this.touchMode) tilt.start();
     this.registry.set('mode', this.cfg.mode && isRace(this.cfg.mode) ? this.cfg.mode : 'endless'); this.registry.set('weather', this.weather); this.scene.launch('HUD');
     this.audio = new GameAudio(this.weather, look.horn); music.start('endless');
@@ -391,7 +391,7 @@ export class EndlessScene extends Phaser.Scene {
     this.elapsed += dt;
     const t = this.touch, set = getSave().settings, left = k.A.isDown || k.LEFT.isDown || t.left, right = k.D.isDown || k.RIGHT.isDown || t.right, drive = !this.over;
     const brake = !drive || k.S.isDown || k.DOWN.isDown || t.brake, throttle = (drive && (k.W.isDown || k.UP.isDown || (this.touchMode && !brake)) ? 1 : 0) * this.throttleMul(), hand = drive && (k.SPACE.isDown || k.SHIFT.isDown || t.hand);
-    tilt.sens = set.tiltSens; let steer = drive ? (right ? 1 : 0) - (left ? 1 : 0) : 0; if (drive && this.touchMode && set.controls === 'tilt') steer = Phaser.Math.Clamp(steer + tilt.value, -1, 1);
+    tilt.sens = set.tiltSens; tilt.ratio = P.speed / this.pp.maxSpeed; let steer = drive ? (right ? 1 : 0) - (left ? 1 : 0) : 0; if (drive && this.touchMode && set.controls === 'tilt') steer = Phaser.Math.Clamp(steer + tilt.value, -1, 1);
     steer = this.shaper.step(steer, dt, P.speed / this.pp.maxSpeed, this.touchMode && set.controls === 'tilt'); // same ramp for keys / arrows / tilt in every view
     if (!this.tiltChecked && this.countdown < -1.5) { this.tiltChecked = true; if (this.touchMode && set.controls === 'tilt' && !tilt.got) this.game.events.emit('toast', 'NO TILT SENSOR - SWITCH TO ARROWS IN PAUSE MENU'); }
     if (Phaser.Input.Keyboard.JustDown(k.H)) this.audio.horn(); if (Phaser.Input.Keyboard.JustDown(k.M)) this.audio.toggleMute();
@@ -400,7 +400,10 @@ export class EndlessScene extends Phaser.Scene {
     const ratio = P.speed / this.pp.maxSpeed; let dh = Phaser.Math.Angle.Wrap(P.heading - UP);
     if (!hand && Math.abs(steer) < .02 && P.slipDeg < 8) P.heading -= dh * Math.min(1, dt * (.8 + ratio * .6)); // gentle, only when the car is already tracking straight (never fights a slide)
     dh = Phaser.Math.Angle.Wrap(P.heading - UP); if (Math.abs(dh) > 1) { P.heading = UP + Math.sign(dh); P.w *= .2; }
-    const off = Math.abs(P.x) > ROAD_W / 2 + KERB; P.step(dt, { throttle, brake, steer, hand }, off, WEATHER_FX[this.weather].grip);
+    const off = Math.abs(P.x) > ROAD_W / 2 + KERB; const gi = this.gears.step(k.E.isDown || !!t.gup, k.Q.isDown || !!t.gdn, k.G.isDown); if (gi.toggle) setSettings({ gearbox: set.gearbox === 'manual' ? 'auto' : 'manual' });
+    if (gi.shift && set.gearbox !== 'manual') setSettings({ gearbox: 'manual' }); P.manual = set.gearbox === 'manual' || gi.shift !== 0; if (gi.shift > 0) P.shiftUp(); else if (gi.shift < 0) P.shiftDown();
+    (window as any).__car = { gear: P.reversing ? -1 : P.gear, rpm: P.rpm, man: P.manual, lim: P.limiter, hand, hf: P.hf, steer, slip: P.slipDeg, kmh: P.speed / PPM * 3.6 };
+    P.step(dt, { throttle, brake, steer, hand }, off, WEATHER_FX[this.weather].grip);
     const lim = WALL - 16; // guard-rail
     if (Math.abs(P.x) > lim) { const sd = Math.sign(P.x), vn = P.vx * sd; P.x = sd * lim; if (vn > 0) { P.vx = -vn * .3 * sd; P.vy *= .93; P.spin += -sd * Math.min(1.2, vn / 260); if (vn > 90) { this.fx.scrape(P.x + sd * 12, P.y); this.shake3 = Math.max(this.shake3, .25); this.cameras.main.shake(90, .004); if ((this.scrapeT -= dt) <= 0) { this.audio.scrape(Math.min(1, vn / 300)); this.scrapeT = .2; } } } }
     const speed = P.speed, c = Math.cos(P.heading), s = Math.sin(P.heading);

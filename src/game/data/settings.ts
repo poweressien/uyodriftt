@@ -11,6 +11,8 @@ export const WEATHER_PICKS: WeatherPick[] = ['auto', 'sunny', 'cloudy', 'rain', 
 /** Four independent audio channels, each 0..1 (0 = off). */
 export interface Settings {
   controls: Controls; view: View; tiltSens: number; // 1 soft, 2 normal, 3 sharp
+  gfx: 'high' | 'medium' | 'low'; // 3D quality: high = shadows + bloom + post effects, medium = shadows, low = fastest
+  gearbox: 'auto' | 'manual'; // manual: you shift with the gear buttons (E / Q on a keyboard)
   music: number;       // background music
   engine: number;      // car / engine / tyre / wind sounds
   radio: number;       // IBOM FM voice
@@ -21,14 +23,17 @@ export interface Settings {
   v?: number;
 }
 export const SETTINGS_VERSION = 5;
-export const DEFAULT_SETTINGS: Settings = { controls: 'arrows', view: 'behind', tiltSens: 2, music: .6, engine: 0, radio: .8, sfx: .8, radioText: true, haptics: true, name: '', v: SETTINGS_VERSION };
+export const GFX_LABEL = { high: 'High', medium: 'Medium', low: 'Low' } as const;
+/** Phones start on Medium, computers on High. Players can change it in Settings or the pause menu. */
+function defaultGfx(): 'high' | 'medium' | 'low' { try { return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && !matchMedia('(pointer:fine)').matches) ? 'medium' : 'high'; } catch { return 'medium'; } }
+export const DEFAULT_SETTINGS: Settings = { controls: 'arrows', view: 'behind', tiltSens: 2, gearbox: 'auto', gfx: defaultGfx(), music: .6, engine: 0, radio: .8, sfx: .8, radioText: true, haptics: true, name: '', v: SETTINGS_VERSION };
 const num = (x: unknown, d: number) => (typeof x === 'number' && Number.isFinite(x) ? Math.max(0, Math.min(1, x)) : d);
 /** Reads any older save (v1/v2 had music/sfx booleans) into the current shape. */
 export function migrateSettings(raw: any): Settings {
   const d = DEFAULT_SETTINGS, r = raw && typeof raw === 'object' ? raw : {};
   const boolVol = (x: unknown, on: number) => (typeof x === 'boolean' ? (x ? on : 0) : undefined);
   const s: Settings = {
-    controls: r.controls === 'tilt' ? 'tilt' : 'arrows', tiltSens: [1, 2, 3].includes(r.tiltSens) ? r.tiltSens : 2,
+    controls: r.controls === 'tilt' ? 'tilt' : 'arrows', tiltSens: [1, 2, 3].includes(r.tiltSens) ? r.tiltSens : 2, gearbox: r.gearbox === 'manual' ? 'manual' : 'auto', gfx: r.gfx === 'high' || r.gfx === 'medium' || r.gfx === 'low' ? r.gfx : d.gfx,
     view: VIEWS.includes(r.view) && (r.v ?? 0) >= 2 ? r.view : 'behind',
     music: num(boolVol(r.music, d.music) ?? r.music, d.music),
     engine: (r.v ?? 0) < 5 ? d.engine : num(r.engine ?? boolVol(r.sfx, d.engine), d.engine), // v5: the engine hum is OFF by default (players found it aggressive); everyone is reset to off once and can turn it up in Settings

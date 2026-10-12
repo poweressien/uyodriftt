@@ -17,7 +17,7 @@ import { CameraRig } from '../systems/CameraRig';
 import { boxHit, resolveHit } from '../systems/Collision';
 import { HazardField } from '../systems/Hazards';
 import { ImpactFx } from '../systems/ImpactFx';
-import { tilt, SteerShaper } from '../systems/Controls';
+import { tilt, SteerShaper, GearInput } from '../systems/Controls';
 import { CoinField, COIN_VALUE, COIN_RADIUS } from '../systems/Pickups';
 import type { MpSession, MpMsg } from '../systems/Net';
 import { PPM, BODY, type Body } from '../data/vehicles';
@@ -26,7 +26,7 @@ import { getSave, setSettings, addCoins, grantLive } from '../../state/store';
 const RUN_SECONDS = 90, MP_WAIT_MAX = 20, LAP_BONUS = 500, COUNTDOWN = 3.2, TRAFFIC_TINTS = [0x8a8f94, 0x2f4a66, 0xa8281f, 0xe6e6e6, 0x2c6b3e];
 const TRAFFIC_KINDS: Body[] = ['sedan', 'suv', 'sedan', 'keke', 'pickup', 'sedan', 'minibus', 'coupe', 'suv', 'sedan'];
 type TCar = { k: Body; car: Phaser.GameObjects.Container; f: number; spd: number; base: number; off: number; baseOff: number; nm: boolean; cool: number; kick: number; rot: number; spinV: number; l: number; w: number; color: number };
-type Touch = { left: boolean; right: boolean; brake: boolean; hand: boolean };
+type Touch = { left: boolean; right: boolean; brake: boolean; hand: boolean; gup?: boolean; gdn?: boolean };
 
 export class DriveScene extends Phaser.Scene {
   constructor() { super('Drive'); }
@@ -35,7 +35,7 @@ export class DriveScene extends Phaser.Scene {
   private car!: Phaser.GameObjects.Container; private beam?: Phaser.GameObjects.Image; private ground!: Phaser.GameObjects.TileSprite; private carBody!: Phaser.GameObjects.Image; private carBrake!: Phaser.GameObjects.Image;
   private world!: ReturnType<typeof buildWorld>; private smoke!: Phaser.GameObjects.Particles.ParticleEmitter; private rig!: CameraRig; private fx!: ImpactFx; private haz!: HazardField;
   private traffic: TCar[] = []; private skids: Phaser.GameObjects.Image[] = []; private skidAge: number[] = []; private skidI = 0;
-  private keys!: Record<string, Phaser.Input.Keyboard.Key>; private touch!: Touch; private touchMode = false; private baseColor = 0xffffff; private mass = 1; private pl = 62; private pw = 27;
+  private keys!: Record<string, Phaser.Input.Keyboard.Key>; private touch!: Touch; private gears = new GearInput(); private touchMode = false; private baseColor = 0xffffff; private mass = 1; private pl = 62; private pw = 27;
   private offT = 0; private fastT = 0; private r3d?: Renderer3D; private r3dCars: R3DCar[] = []; private r3dHaz: R3DHaz[] = []; private shake3 = 0; private audio!: GameAudio; private radio!: Radio; private density = 1; private dmg = 0;
   private timeLeft = RUN_SECONDS; private countdown = COUNTDOWN; private lastCount = 4; private paused = false; private ended = false; private tiltChecked = false;
   private coinsF!: CoinField; private pickups = 0; private distPx = 0; private achT = 0; private nmCount = 0; private shaper = new SteerShaper();
@@ -83,7 +83,7 @@ export class DriveScene extends Phaser.Scene {
     // camera: the rig replaces startFollow so views can rotate / zoom
     this.touchMode = !!this.registry.get('touchMode'); this.rig = new CameraRig(cam, { headingUp: this.touchMode }); this.rig.snap(s.x, s.y, this.phys.heading);
     this.add.rectangle(W / 2, H / 2, W * 3, H * 3, 0x02140b, (1 - vis) * .95).setScrollFactor(0).setDepth(20);
-    this.keys = this.input.keyboard!.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT,SPACE,SHIFT,H,M,C,V,ESC,P') as Record<string, Phaser.Input.Keyboard.Key>;
+    this.keys = this.input.keyboard!.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT,SPACE,SHIFT,E,Q,G,H,M,C,V,ESC,P') as Record<string, Phaser.Input.Keyboard.Key>;
     this.touch = this.registry.get('touch') as Touch; this.touchMode = !!this.registry.get('touchMode'); this.input.addPointer(3); if (this.touchMode) tilt.start();
     this.registry.set('mode', 'drift'); this.registry.set('weather', this.weather);
     this.scene.launch('HUD'); this.world.update(this.rig.bounds(), true);
@@ -162,13 +162,16 @@ export class DriveScene extends Phaser.Scene {
     }
     const t = this.touch, set = getSave().settings, left = k.A.isDown || k.LEFT.isDown || t.left, right = k.D.isDown || k.RIGHT.isDown || t.right, brake = k.S.isDown || k.DOWN.isDown || t.brake;
     const throttle = k.W.isDown || k.UP.isDown || (this.touchMode && !brake) ? 1 : 0, hand = k.SPACE.isDown || k.SHIFT.isDown || t.hand;
-    tilt.sens = set.tiltSens; let steer = (right ? 1 : 0) - (left ? 1 : 0); if (this.touchMode && set.controls === 'tilt') steer = Math.max(-1, Math.min(1, steer + tilt.value));
+    tilt.sens = set.tiltSens; tilt.ratio = this.phys.speed / this.pp.maxSpeed; let steer = (right ? 1 : 0) - (left ? 1 : 0); if (this.touchMode && set.controls === 'tilt') steer = Math.max(-1, Math.min(1, steer + tilt.value));
     steer = this.shaper.step(steer, dt, this.phys.speed / this.pp.maxSpeed, this.touchMode && set.controls === 'tilt'); // same ramp for keys / arrows / tilt in every view
     if (!this.tiltChecked && this.countdown < -1.5) { this.tiltChecked = true; if (this.touchMode && set.controls === 'tilt' && !tilt.got) this.game.events.emit('toast', 'NO TILT SENSOR - SWITCH TO ARROWS IN PAUSE MENU'); }
     if (Phaser.Input.Keyboard.JustDown(k.H)) this.audio.horn(); if (Phaser.Input.Keyboard.JustDown(k.M)) this.audio.toggleMute();
 
     const loc = locate(tr, P.x, P.y, this.hint); this.hint = loc.i; const off = loc.d > tr.width / 2 + 28;
     this.floodT = Math.max(0, this.floodT - dt);
+    const gi = this.gears.step(k.E.isDown || !!t.gup, k.Q.isDown || !!t.gdn, k.G.isDown); if (gi.toggle) setSettings({ gearbox: set.gearbox === 'manual' ? 'auto' : 'manual' });
+    if (gi.shift && set.gearbox !== 'manual') setSettings({ gearbox: 'manual' }); P.manual = set.gearbox === 'manual' || gi.shift !== 0; if (gi.shift > 0) P.shiftUp(); else if (gi.shift < 0) P.shiftDown();
+    (window as any).__car = { gear: P.reversing ? -1 : P.gear, rpm: P.rpm, man: P.manual, lim: P.limiter, hand, hf: P.hf, steer, slip: P.slipDeg, kmh: P.speed / PPM * 3.6 };
     P.step(dt, { throttle, brake, steer, hand }, off, WEATHER_FX[this.weather].grip * (this.floodT > 0 ? .45 : 1));
     const speed = P.speed, c = Math.cos(P.heading), s = Math.sin(P.heading);
     this.car.setPosition(P.x, P.y).setRotation(P.heading); if (this.beam) this.beam.setPosition(P.x + c * 30, P.y + s * 30).setRotation(P.heading); this.carBrake.setAlpha(brake ? .95 : 0);

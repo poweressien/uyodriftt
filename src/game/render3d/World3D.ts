@@ -23,14 +23,24 @@ export function roadTexture(s: RoadSpec) {
   const t = canvasTex(TW, 256, g => {
     g.fillStyle = hex(s.shoulder); g.fillRect(0, 0, TW, 256); for (let i = 0; i < TW * 1.2; i++) { g.fillStyle = r() < .5 ? 'rgba(0,0,0,.1)' : 'rgba(255,255,255,.07)'; g.fillRect(r() * TW, r() * 256, 2 + r() * 3, 2 + r() * 3); }
     for (let y = 0; y < 256; y += 32) for (const x of [s.shoulderW, a1]) { g.fillStyle = (y / 32) % 2 ? '#ffffff' : '#e0233a'; g.fillRect(x, y, s.kerbW, 32); }
-    g.fillStyle = hex(s.road); g.fillRect(a0, 0, s.roadW, 256); for (let i = 0; i < s.roadW * 3.5; i++) { g.fillStyle = r() < .5 ? 'rgba(0,0,0,.15)' : 'rgba(255,255,255,.05)'; g.fillRect(a0 + r() * s.roadW, r() * 256, 1 + r() * 2, 1 + r() * 2); }
+    g.fillStyle = hex(s.road); g.fillRect(a0, 0, s.roadW, 256); for (let i = 0; i < s.roadW * 9; i++) { g.fillStyle = r() < .5 ? 'rgba(0,0,0,.17)' : 'rgba(255,255,255,.07)'; g.fillRect(a0 + r() * s.roadW, r() * 256, 1 + r() * 1.5, 1 + r() * 1.5); }
     g.fillStyle = 'rgba(0,0,0,.11)'; for (let l = 0; l < s.lanes; l++) for (const o of [-laneW * .2, laneW * .2]) g.fillRect(a0 + (l + .5) * laneW + o - 7, 0, 14, 256);
     g.fillStyle = 'rgba(255,255,255,.9)'; if (s.edgeLines !== false) { g.fillRect(a0 + 10, 0, 5, 256); g.fillRect(a1 - 15, 0, 5, 256); }
     for (let l = 1; l < s.lanes; l++) for (const y of [0, 128]) g.fillRect(a0 + l * laneW - 3, y, 6, 64);
+    // ---- wear and detail: polished tyre tracks, patched tarmac, cracks, tar seams, oil drips, dust drifting in from the shoulder
+    for (let l = 0; l < s.lanes; l++) for (const o of [-laneW * .2, laneW * .2]) { const cx = a0 + (l + .5) * laneW + o, gl = g.createLinearGradient(cx - 14, 0, cx + 14, 0); gl.addColorStop(0, 'rgba(255,255,255,0)'); gl.addColorStop(.5, 'rgba(255,255,255,.05)'); gl.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gl; g.fillRect(cx - 14, 0, 28, 256); }
+    for (let i = 0; i < 7; i++) { const px = a0 + r() * (s.roadW - 40), py = r() * 220, pw = 18 + r() * 40, ph = 14 + r() * 30; g.fillStyle = `rgba(${r() < .5 ? '0,0,0' : '255,255,255'},${(.05 + r() * .06).toFixed(3)})`; g.fillRect(px, py, pw, ph); g.strokeStyle = 'rgba(0,0,0,.28)'; g.lineWidth = 1; g.strokeRect(px + .5, py + .5, pw, ph); }
+    g.strokeStyle = 'rgba(0,0,0,.35)'; g.lineWidth = 1.2; for (const sy of [34, 172]) { g.beginPath(); g.moveTo(a0, sy); for (let x = a0; x <= a1; x += 12) g.lineTo(x, sy + (r() - .5) * 2); g.stroke(); }
+    for (let i = 0; i < 9; i++) { let x = a0 + r() * s.roadW, y = r() * 256; g.beginPath(); g.moveTo(x, y); for (let k = 0; k < 6; k++) { x += (r() - .5) * 18; y += 6 + r() * 10; g.lineTo(x, y); } g.strokeStyle = `rgba(0,0,0,${(.25 + r() * .25).toFixed(2)})`; g.lineWidth = .8 + r() * .8; g.stroke(); }
+    for (let i = 0; i < 6; i++) { const ox = a0 + laneW * (r() * s.lanes), oy = r() * 256, rr = 5 + r() * 9, og = g.createRadialGradient(ox, oy, 0, ox, oy, rr); og.addColorStop(0, 'rgba(0,0,0,.38)'); og.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = og; g.fillRect(ox - rr, oy - rr, rr * 2, rr * 2); }
+    for (const [x0, dir] of [[a0, -1], [a1, 1]] as const) { const dg = g.createLinearGradient(x0, 0, x0 + dir * 26, 0); dg.addColorStop(0, `rgba(${(s.shoulder >> 16) & 255},${(s.shoulder >> 8) & 255},${s.shoulder & 255},.0)`); dg.addColorStop(1, 'rgba(0,0,0,0)'); const ug = g.createLinearGradient(x0, 0, x0 - dir * 30, 0); ug.addColorStop(0, 'rgba(150,120,80,.22)'); ug.addColorStop(1, 'rgba(150,120,80,0)'); g.fillStyle = ug; g.fillRect(dir < 0 ? x0 : x0 - 30, 0, 30, 256); }
   }); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.minFilter = THREE.LinearMipmapLinearFilter; return { tex: t, TW };
 }
 
 // -------------------------------------------------------------------- sky
+/** One sun direction for the sky texture and the shadow-casting light: high, over the player's left shoulder, so the car is well lit and shadows fall ahead and to the right. */
+export const SUN_DIR = new THREE.Vector3(-.62, .55, .38).normalize();
+const SUN_U = Math.atan2(SUN_DIR.z, SUN_DIR.x) / (2 * Math.PI) + .5, SUN_Y = (.5 - Math.asin(SUN_DIR.y) / Math.PI) * 512;
 interface SkyDef { top: number; mid: number; horizon: number; fog: number; fogNear: number; fogFar: number; sun: number; hemi: number; sunI: number; ambient: number; stars?: boolean; clouds: number }
 export const SKIES: Record<Weather, SkyDef> = {
   sunny: { top: 0x2f7fd0, mid: 0x6fb2ec, horizon: 0xe9f0f2, fog: 0xdbe8ee, fogNear: 70, fogFar: 380, sun: 0xfff1c9, hemi: .85, sunI: 2.6, ambient: .35, clouds: .35 },
@@ -45,7 +55,7 @@ export function skyTexture(d: SkyDef) {
     const gr = g.createLinearGradient(0, 0, 0, 512); gr.addColorStop(0, css(d.top)); gr.addColorStop(.3, css(d.mid)); gr.addColorStop(.49, css(d.horizon)); gr.addColorStop(.5, css(d.fog)); gr.addColorStop(1, css(d.fog)); g.fillStyle = gr; g.fillRect(0, 0, 1024, 512);
     if (d.stars) for (let i = 0; i < 420; i++) { g.fillStyle = `rgba(255,255,255,${.3 + r() * .7})`; g.fillRect(r() * 1024, r() * 230, r() < .1 ? 2 : 1, r() < .1 ? 2 : 1); }
     for (let i = 0; i < 26 * d.clouds; i++) { const x = r() * 1024, y = 90 + r() * 150, w = 60 + r() * 170; for (let k = 0; k < 5; k++) { const cx = x + (r() - .5) * w, cy = y + (r() - .5) * 14, rad = 26 + r() * 40, cg = g.createRadialGradient(cx, cy, 0, cx, cy, rad); const a = d.stars ? .05 : .32 * d.clouds; cg.addColorStop(0, `rgba(255,255,255,${a})`); cg.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = cg; g.fillRect(cx - rad, cy - rad, rad * 2, rad * 2); } }
-    for (const [u, sz] of [[.25, 90], [.25, 30]] as const) { const sg = g.createRadialGradient(u * 1024, 235, 0, u * 1024, 235, sz * 2.6); sg.addColorStop(0, d.stars ? 'rgba(180,200,255,.9)' : 'rgba(255,240,200,.95)'); sg.addColorStop(.25, d.stars ? 'rgba(120,150,230,.25)' : 'rgba(255,214,150,.4)'); sg.addColorStop(1, 'rgba(255,214,150,0)'); g.fillStyle = sg; g.fillRect(u * 1024 - sz * 3, 235 - sz * 3, sz * 6, sz * 6); }
+    for (const [u, sz] of [[SUN_U, 90], [SUN_U, 30]] as const) { const sg = g.createRadialGradient(u * 1024, SUN_Y, 0, u * 1024, SUN_Y, sz * 2.6); sg.addColorStop(0, d.stars ? 'rgba(180,200,255,.9)' : 'rgba(255,240,200,.95)'); sg.addColorStop(.25, d.stars ? 'rgba(120,150,230,.25)' : 'rgba(255,214,150,.4)'); sg.addColorStop(1, 'rgba(255,214,150,0)'); g.fillStyle = sg; g.fillRect(u * 1024 - sz * 3, SUN_Y - sz * 3, sz * 6, sz * 6); }
   });
 }
 
@@ -66,8 +76,8 @@ const GEO: Record<PropKind, () => THREE.BufferGeometry> = {
   palm: () => { const gs: THREE.BufferGeometry[] = [paint(T(new THREE.CylinderGeometry(.2, .34, 7, 7), .3, 3.5, 0, 0, 0, -.07), 0x7a5230)];
     for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2, leaf = new THREE.ConeGeometry(.5, 4, 4); leaf.scale(1, 1, .35); gs.push(paint(T(leaf, 0, 0, 0, 0, 0, -Math.PI / 2 - .55), i % 2 ? 0x1c8a3a : 0x2bb04d)); const l = gs[gs.length - 1]; l.translate(1.9, 0, 0); l.rotateY(a); l.translate(.55, 6.9, 0); }
     gs.push(paint(T(new THREE.IcosahedronGeometry(.28, 0), .55, 6.6, 0), 0x5a3a1c)); return merge(gs); },
-  tree: () => merge([paint(T(new THREE.CylinderGeometry(.3, .45, 3.4, 7), 0, 1.7, 0), 0x5a3a1c), paint(T(new THREE.IcosahedronGeometry(2.3, 1), 0, 5, 0), 0x17632c), paint(T(new THREE.IcosahedronGeometry(1.6, 1), 1.4, 4.2, .6), 0x1f7c38), paint(T(new THREE.IcosahedronGeometry(1.5, 1), -1.2, 4.4, -.9), 0x2a9a47)]),
-  shrub: () => merge([paint(T(new THREE.IcosahedronGeometry(.9, 1), 0, .6, 0), 0x1f7c38), paint(T(new THREE.IcosahedronGeometry(.6, 1), .6, .9, .2), 0x2a9a47), ...[0, 1, 2, 3].map(i => paint(T(new THREE.IcosahedronGeometry(.1, 0), Math.cos(i * 1.7) * .7, 1.1 + (i % 2) * .2, Math.sin(i * 1.7) * .7), i % 2 ? 0xff8c1a : 0xffffff))]),
+  tree: () => merge([paint(T(new THREE.CylinderGeometry(.3, .45, 3.4, 7), 0, 1.7, 0), 0x5a3a1c), paint(T(new THREE.IcosahedronGeometry(2.3, 2), 0, 5, 0), 0x17632c), paint(T(new THREE.IcosahedronGeometry(1.6, 2), 1.4, 4.2, .6), 0x1f7c38), paint(T(new THREE.IcosahedronGeometry(1.5, 2), -1.2, 4.4, -.9), 0x2a9a47)]),
+  shrub: () => merge([paint(T(new THREE.IcosahedronGeometry(.9, 2), 0, .6, 0), 0x1f7c38), paint(T(new THREE.IcosahedronGeometry(.6, 2), .6, .9, .2), 0x2a9a47), ...[0, 1, 2, 3].map(i => paint(T(new THREE.IcosahedronGeometry(.1, 0), Math.cos(i * 1.7) * .7, 1.1 + (i % 2) * .2, Math.sin(i * 1.7) * .7), i % 2 ? 0xff8c1a : 0xffffff))]),
   umbrella: () => merge([paint(T(new THREE.CylinderGeometry(.05, .05, 2.3, 6), 0, 1.15, 0), 0xdddddd), paint(T(new THREE.ConeGeometry(1.6, .75, 10), 0, 2.5, 0), 0xffffff), paint(T(new THREE.BoxGeometry(1.2, .08, 1.2), 0, .85, 0), 0x6b4a2a)]),
   bungalow: () => merge([
     paint(T(new THREE.BoxGeometry(8.4, 3.2, 6.4), 0, 1.6, 0), 0xffffff), paint(T(hip(8.4 + .9, 6.4 + .9, 2.1), 0, 3.2, 0), 0xa8452b),
@@ -112,8 +122,8 @@ export class Props {
   private static PAL: Partial<Record<PropKind, number[]>> = { umbrella: Props.UMB, bungalow: Props.PASTEL, faceme: Props.PASTEL, duplex: Props.PASTEL, church: [0xffffff, 0xfff3dc, 0xeaf2ff], plaza: [0xffffff, 0xeaf2ff, 0xfff3dc, 0xf0f0f0], kiosk: Props.KIOSK };
   constructor(private cap: number) {
     for (const k of Object.keys(GEO) as PropKind[]) {
-      const mat = k === 'lampHead' ? new THREE.MeshBasicMaterial({ vertexColors: true }) : new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .85, flatShading: true });
-      const m = new THREE.InstancedMesh(GEO[k](), mat, cap); m.count = 0; m.frustumCulled = false; this.group.add(m); this.meshes.set(k, m); this.n.set(k, 0);
+      const mat = k === 'lampHead' ? (() => { const b = new THREE.MeshBasicMaterial({ vertexColors: true }); b.color.setScalar(3.2); return b; })() : new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .78, metalness: .02 });
+      const m = new THREE.InstancedMesh(GEO[k](), mat, cap); m.count = 0; m.frustumCulled = false; m.castShadow = m.receiveShadow = k !== 'lampHead'; this.group.add(m); this.meshes.set(k, m); this.n.set(k, 0);
     }
   }
   begin() { for (const k of this.n.keys()) this.n.set(k, 0); }
@@ -123,4 +133,18 @@ export class Props {
     put(kind); if (kind === 'lamp') put('lampHead');
   }
   end() { this.meshes.forEach((m, k) => { m.count = this.n.get(k)!; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }); }
+}
+
+/** Distant hills and a tree-line: two jagged rings of geometry round the camera (opaque, no fog, haze baked into the vertex colours). */
+export function horizonRing(ground: number, fog: number, night: boolean) {
+  const r = rng(77), grp = new THREE.Group(), N = 220, dim = night ? .22 : 1;
+  const ring = (rad: number, base: number, amp: number, jag: number, f1: number, f2: number, ph: number, bottom: THREE.Color, top: THREE.Color) => {
+    const pos: number[] = [], col: number[] = [], idx: number[] = [];
+    for (let i = 0; i <= N; i++) { const a = (i / N) * Math.PI * 2, h = base + amp * (Math.sin(a * f1 + ph) * .6 + Math.sin(a * f2 + ph * 2) * .4 + .5) + r() * jag, x = Math.cos(a) * rad, z = Math.sin(a) * rad;
+      pos.push(x, -8, z, x, h, z); col.push(bottom.r * dim, bottom.g * dim, bottom.b * dim, top.r * dim, top.g * dim, top.b * dim); if (i < N) { const k = i * 2; idx.push(k, k + 1, k + 2, k + 1, k + 3, k + 2); } }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); g.setIndex(idx);
+    const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, fog: false })); m.frustumCulled = false; m.renderOrder = -2; return m;
+  };
+  const gc = new THREE.Color(ground), fc = new THREE.Color(fog), far = new THREE.Color(0x4f7488).lerp(fc, .5), farTop = far.clone().lerp(fc, .4), dg = gc.clone().multiplyScalar(.55), near = dg.clone().lerp(fc, .3), nearTop = dg.clone().lerp(fc, .15);
+  grp.add(ring(590, 4, 40, 3, 3, 7, 1.1, far, farTop), ring(545, 2, 9, 4, 5, 13, 2.3, near, nearTop)); return grp;
 }

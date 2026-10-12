@@ -1,5 +1,5 @@
 import { useSave, setSettings } from '../state/store';
-import { VIEW_LABEL } from '../game/data/settings';
+import { VIEW_LABEL, GFX_LABEL } from '../game/data/settings';
 import { requestTilt, TILT_LABEL } from '../game/systems/Controls';
 import AudioPanel from './AudioPanel';
 import { pushPopup } from './Popups';
@@ -15,6 +15,7 @@ export default function PauseMenu({ onResume, onCam, onRestart, onQuit, live, to
         {live && <div className="muted">Live race: the clock keeps running.</div>}
         <button className="btn primary" onClick={onResume}>Resume</button>
         <div className="pause-row"><button className="btn" onClick={onCam}>Camera: {VIEW_LABEL[s.view]}</button>{touch && <button className="btn" onClick={steer}>Steering: {s.controls === 'tilt' ? 'Tilt' : 'Arrows'}</button>}{touch && s.controls === 'tilt' && <button className="btn" onClick={() => setSettings({ tiltSens: s.tiltSens % 3 + 1 })}>Tilt: {TILT_LABEL[s.tiltSens]}</button>}</div>
+        <div className="pause-row"><button className="btn" onClick={() => setSettings({ gearbox: s.gearbox === 'manual' ? 'auto' : 'manual' })}>Gearbox: {s.gearbox === 'manual' ? 'Manual' : 'Auto'}</button><button className="btn" onClick={() => setSettings({ gfx: s.gfx === 'high' ? 'medium' : s.gfx === 'medium' ? 'low' : 'high' })}>Graphics: {GFX_LABEL[s.gfx]}</button></div>
         <AudioPanel compact />
         <div className="pause-row">{onRestart && <button className="btn" onClick={onRestart}>Restart</button>}<button className="btn danger" onClick={onQuit}>{live ? 'Leave race' : 'Quit to menu'}</button></div>
       </div>

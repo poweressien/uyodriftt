@@ -2,7 +2,13 @@ import * as THREE from 'three';
 import type Phaser from 'phaser';
 import { Car3D, CarKind, CarLook, makeEnvironment, CAR_DIMS } from './Car3D';
 import { Fx3D } from './Fx3D';
-import { Props, SKIES, grassTexture, roadTexture, skyTexture, rng } from './World3D';
+import { Props, SKIES, SUN_DIR, grassTexture, roadTexture, skyTexture, horizonRing, rng } from './World3D';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { getSave } from '../../state/store';
 import { PPM } from '../data/vehicles';
 import { BUILDINGS, DECOR_EXT, type District, type Weather, type Decor } from '../data/districts';
 import type { Track } from '../systems/Track';
@@ -13,6 +19,19 @@ export interface R3DCar { x: number; y: number; h: number; on: boolean; brake: b
 export interface R3DHaz { kind: 'pothole' | 'cone' | 'flood'; x: number; y: number; a: number; s: number; r: number }
 export interface R3DFrame { dt: number; px: number; py: number; heading: number; vx: number; vy: number; steer: number; ax: number; ay: number; wheelRate: number; brake: boolean; ratio: number; dmg: number; blink: boolean; shake: number; cars: R3DCar[]; haz: R3DHaz[]; coins?: { x: number; y: number }[] }
 export interface R3DSetup { mode: 'endless' | 'drift'; dist: District; weather: Weather; player: CarLook; traffic: CarKind[]; seed: number; track?: Track; layout?: Layout; lanes?: number }
+/** Final grade (linear, before tone mapping): speed-driven radial blur + a touch of colour fringing at the edges, gentle saturation / contrast, vignette. */
+const GRADE = {
+  uniforms: { tDiffuse: { value: null as THREE.Texture | null }, uSpeed: { value: 0 }, uVig: { value: .32 } },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float uSpeed; uniform float uVig; varying vec2 vUv;
+  void main(){ vec2 c = vUv - .5; float d = length(c); vec3 col;
+    if (uSpeed > .05) { float k = uSpeed * uSpeed * .07 * d; col = vec3(0.); for (int i = 0; i < 6; i++) { float s = 1. - k * float(i) / 5. * 1.6; col += texture2D(tDiffuse, c * s + .5).rgb; } col /= 6.;
+      float ca = uSpeed * .018 * d; col.r = mix(col.r, texture2D(tDiffuse, c * (1. + ca) + .5).r, .5); col.b = mix(col.b, texture2D(tDiffuse, c * (1. - ca) + .5).b, .5); }
+    else col = texture2D(tDiffuse, vUv).rgb;
+    float l = dot(col, vec3(.2126, .7152, .0722)); col = mix(vec3(l), col, 1.1); col = max((col - .18) * 1.05 + .18, 0.); col *= 1. - uVig * smoothstep(.3, .95, d * 1.45);
+    gl_FragColor = vec4(col, 1.); }`,
+};
+type Gfx = 'high' | 'medium' | 'low';
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 // endless road cross-section (px, same numbers as EndlessScene)
 export const E_LANE_W = 110, E_KERB = 18, E_SHOULDER = 150, E_CHUNK = 1200;
@@ -23,7 +42,7 @@ export class Renderer3D {
   readonly ok: boolean; active = false; private r!: THREE.WebGLRenderer; private cv: HTMLCanvasElement; private host: HTMLElement; private scene = new THREE.Scene(); private cam = new THREE.PerspectiveCamera(62, 16 / 9, .3, 700);
   private built = false; private mode: 'endless' | 'drift' = 'endless'; private weather: Weather = 'sunny'; private player!: Car3D; private traffic: Car3D[] = []; private fx!: Fx3D; private props!: Props; private ground!: THREE.Mesh; private road?: THREE.Mesh; private rails?: THREE.Group;
   private sun!: THREE.DirectionalLight; private lights: THREE.Object3D[] = []; private camYaw = 0; private fov = 62; private rain?: THREE.LineSegments; private rainN = 0; private pk = -999; private seed = 1; private pick!: () => Decor; private decor: [Decor, number][] = []; private ro: ResizeObserver; private roadPeriod = 0; private spots: THREE.SpotLight[] = []; private lanes = 4; private coins: THREE.Mesh[] = [];
-  private hz: Record<string, THREE.Object3D[]> = { cone: [], pothole: [], flood: [] }; private hzUsed: Record<string, number> = { cone: 0, pothole: 0, flood: 0 }; private snapCam = true; private t = 0; private camPos = new THREE.Vector3(); private onResize = () => this.sync();
+  private hz: Record<string, THREE.Object3D[]> = { cone: [], pothole: [], flood: [] }; private hzUsed: Record<string, number> = { cone: 0, pothole: 0, flood: 0 }; private snapCam = true; private t = 0; private q: Gfx = 'medium'; private composer?: EffectComposer; private grade?: ShaderPass; private hills?: THREE.Object3D; private lv = new THREE.Vector3(); private lr = new THREE.Vector3(); private lu = new THREE.Vector3(); private lt = new THREE.Vector3(); private camPos = new THREE.Vector3(); private onResize = () => this.sync();
   constructor(private game: Phaser.Game) {
     this.cv = game.canvas; this.host = this.cv.parentElement!;
     try { this.r = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' }); this.ok = true; } catch { this.ok = false; this.ro = new ResizeObserver(() => {}); return; }
@@ -34,7 +53,7 @@ export class Renderer3D {
   private sync() {
     if (!this.ok) return; const b = this.cv.getBoundingClientRect(), h = this.host.getBoundingClientRect(), el = this.r.domElement, w = Math.max(2, Math.round(b.width)), ht = Math.max(2, Math.round(b.height));
     el.style.left = `${b.left - h.left}px`; el.style.top = `${b.top - h.top}px`; el.style.width = `${w}px`; el.style.height = `${ht}px`;
-    this.r.setPixelRatio(Math.min(window.devicePixelRatio || 1, w > 1100 ? 1.25 : 1.75)); this.r.setSize(w, ht, false); this.cam.aspect = w / ht; this.cam.updateProjectionMatrix();
+    const pr = Math.min(window.devicePixelRatio || 1, this.q === 'high' ? (w > 1100 ? 1.25 : 1.5) : w > 1100 ? 1.25 : 1.75); this.r.setPixelRatio(pr); this.r.setSize(w, ht, false); if (this.composer) { this.composer.setPixelRatio(pr); this.composer.setSize(w, ht); } this.cam.aspect = w / ht; this.cam.updateProjectionMatrix();
   }
   setActive(on: boolean) { if (!this.ok) return; this.active = on && this.built; this.r.domElement.style.display = this.active ? 'block' : 'none'; if (this.active) this.sync(); }
 
@@ -44,9 +63,10 @@ export class Renderer3D {
     const skyTex = skyTexture(sk); skyTex.mapping = THREE.EquirectangularReflectionMapping; scene.background = skyTex;
     const pm = new THREE.PMREMGenerator(this.r); scene.environment = pm.fromEquirectangular(skyTex).texture; pm.dispose(); (scene as any).environmentIntensity = c.weather === 'night' ? .35 : .75;
     scene.fog = new THREE.Fog(sk.fog, sk.fogNear, sk.fogFar); this.r.toneMappingExposure = c.weather === 'night' ? 1.25 : 1;
-    scene.add(new THREE.HemisphereLight(sk.top, 0x3a2a14, sk.hemi), new THREE.AmbientLight(0xffffff, sk.ambient)); this.sun = new THREE.DirectionalLight(sk.sun, sk.sunI); this.sun.position.set(-40, 70, -30); scene.add(this.sun, this.sun.target);
+    scene.add(new THREE.HemisphereLight(sk.top, 0x3a2a14, sk.hemi), new THREE.AmbientLight(0xffffff, sk.ambient)); this.sun = new THREE.DirectionalLight(sk.sun, sk.sunI * 1.1); this.sun.position.copy(SUN_DIR).multiplyScalar(120); scene.add(this.sun, this.sun.target); { const sc = this.sun.shadow.camera; sc.near = 10; sc.far = 280; this.sun.shadow.bias = -.0004; this.sun.shadow.normalBias = .06; }
     // ground
-    const gt = grassTexture(pal.ground); gt.repeat.set(160, 160); this.ground = new THREE.Mesh(new THREE.PlaneGeometry(1280, 1280), new THREE.MeshStandardMaterial({ map: gt, roughness: 1 })); this.ground.rotation.x = -Math.PI / 2; this.ground.position.y = -.02; scene.add(this.ground);
+    const gt = grassTexture(pal.ground); gt.repeat.set(160, 160); this.ground = new THREE.Mesh(new THREE.PlaneGeometry(1280, 1280), new THREE.MeshStandardMaterial({ map: gt, roughness: 1 })); this.ground.rotation.x = -Math.PI / 2; this.ground.position.y = -.02; this.ground.receiveShadow = true; scene.add(this.ground);
+    this.hills = horizonRing(pal.ground, sk.fog, c.weather === 'night'); scene.add(this.hills);
     const wts = Object.entries(c.dist.decor) as [Decor, number][], total = wts.reduce((a, [, w]) => a + w, 0), pr = rng(c.seed * 13 + 1); this.decor = wts; this.pick = () => { let x = pr() * total; for (const [k, w] of wts) if ((x -= w) < 0) return k; return wts[0]?.[0] ?? 'palm'; };
     this.props = new Props(c.mode === 'endless' ? 900 : 700); scene.add(this.props.group);
     this.lanes = c.lanes ?? 4; if (c.mode === 'endless') this.buildEndless(pal); else this.buildTrack(c, pal);
@@ -59,7 +79,7 @@ export class Renderer3D {
     this.coins = []; for (let i = 0; i < 48; i++) { const m = new THREE.Mesh(cg, cm); m.visible = false; scene.add(m); this.coins.push(m); }
     this.fx = new Fx3D(); scene.add(this.fx.group);
     if (c.weather === 'rain' || c.weather === 'heavy_rain') this.makeRain(c.weather === 'heavy_rain' ? 1100 : 600);
-    this.built = true; this.pk = -999; this.snapCam = true;
+    this.built = true; this.pk = -999; this.snapCam = true; this.q = 'medium'; this.killComposer(); this.applyQuality(this.quality());
   }
   /** Journey finish: chequered strip across the road and a gantry with the town name. `yPx` is the world y of the line (px). */
   setFinish(yPx: number, text: string) {
@@ -81,9 +101,28 @@ export class Renderer3D {
     const g = new THREE.BufferGeometry(); this.rainN = n; const p = new Float32Array(n * 6); for (let i = 0; i < n; i++) { const x = (Math.random() - .5) * 60, y = Math.random() * 22, z = (Math.random() - .5) * 60; p.set([x, y, z, x, y + 1.1, z], i * 6); } g.setAttribute('position', new THREE.BufferAttribute(p, 3));
     this.rain = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0xcfe0ee, transparent: true, opacity: .32, depthWrite: false })); this.rain.frustumCulled = false; this.scene.add(this.rain);
   }
+  /** Road surface: dry asphalt, or a wet mirror-like sheen in rain. */
+  private roadMat(map: THREE.Texture, extra: THREE.MeshStandardMaterialParameters = {}) { const wet = this.weather === 'rain' || this.weather === 'heavy_rain'; return new THREE.MeshStandardMaterial({ map, roughness: wet ? .3 : .84, metalness: wet ? .15 : 0, envMapIntensity: wet ? 1.6 : .9, ...extra }); }
+  private quality(): Gfx { try { const g = getSave().settings.gfx; return g === 'high' || g === 'medium' || g === 'low' ? g : 'medium'; } catch { return 'medium'; } }
+  /** Apply the graphics setting live: shadows (medium+), composer with bloom / grade / MSAA (high). */
+  private applyQuality(q: Gfx) {
+    const r = this.r, first = this.q !== q; this.q = q; r.shadowMap.enabled = q !== 'low'; r.shadowMap.type = q === 'high' ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+    if (this.sun) { const sz = q === 'high' ? 2048 : 1024, e = q === 'high' ? 46 : 40, sc = this.sun.shadow.camera; this.sun.castShadow = q !== 'low'; if (this.sun.shadow.mapSize.x !== sz) { this.sun.shadow.map?.dispose(); this.sun.shadow.map = null; this.sun.shadow.mapSize.set(sz, sz); } sc.left = -e; sc.right = e; sc.top = e; sc.bottom = -e; sc.updateProjectionMatrix(); }
+    if (q === 'high') this.buildComposer(); else this.killComposer();
+    if (first) this.scene.traverse(o => { const m = (o as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined; if (m) (Array.isArray(m) ? m : [m]).forEach(x => { x.needsUpdate = true; }); });
+    this.sync();
+  }
+  private buildComposer() {
+    if (this.composer) { (this.composer.passes[0] as RenderPass).scene = this.scene; return; }
+    try {
+      const sz = this.r.getDrawingBufferSize(new THREE.Vector2()), rt = new THREE.WebGLRenderTarget(sz.x, sz.y, { type: THREE.HalfFloatType, samples: 4 }), c = new EffectComposer(this.r, rt);
+      c.addPass(new RenderPass(this.scene, this.cam)); c.addPass(new UnrealBloomPass(new THREE.Vector2(sz.x, sz.y), .32, .6, .9)); this.grade = new ShaderPass(GRADE); c.addPass(this.grade); c.addPass(new OutputPass()); this.composer = c;
+    } catch { this.composer = undefined; }
+  }
+  private killComposer() { if (!this.composer) return; this.composer.dispose(); this.composer = undefined; this.grade = undefined; }
   private buildEndless(pal: District['palette']) {
     const { tex, TW } = roadTexture({ road: pal.road, shoulder: pal.shoulder, roadW: eRoadW(this.lanes), shoulderW: E_SHOULDER, kerbW: E_KERB, lanes: this.lanes }); const period = 256 * S, reps = 36; this.roadPeriod = period;
-    tex.repeat.set(1, reps); this.road = new THREE.Mesh(new THREE.PlaneGeometry(TW * S, period * reps), new THREE.MeshStandardMaterial({ map: tex, roughness: .88, metalness: 0 })); this.road.rotation.x = -Math.PI / 2; this.scene.add(this.road);
+    tex.repeat.set(1, reps); this.road = new THREE.Mesh(new THREE.PlaneGeometry(TW * S, period * reps), this.roadMat(tex, { polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })); this.road.receiveShadow = true; this.road.rotation.x = -Math.PI / 2; this.scene.add(this.road);
     // guard rails: continuous beam + posts, moved in whole periods so the pattern never jumps
     const g = new THREE.Group(), steel = new THREE.MeshStandardMaterial({ color: 0xcfd6da, metalness: .9, roughness: .3 }), len = period * reps, postGeo = new THREE.CylinderGeometry(.06, .06, .8, 6), posts = Math.round(len / (period / 5));
     for (const side of [-1, 1]) { const x = side * eWall(this.lanes) * S; const beam = new THREE.Mesh(new THREE.BoxGeometry(.12, .34, len), steel); beam.position.set(x, .62, 0); const pm = new THREE.InstancedMesh(postGeo, new THREE.MeshStandardMaterial({ color: 0x3a4146, roughness: .6 }), posts), o = new THREE.Object3D();
@@ -96,7 +135,7 @@ export class Renderer3D {
     for (let i = 1; i <= n; i++) { const a = t.pts[i - 1], b = t.pts[i % n]; len += Math.hypot(b.x - a.x, b.y - a.y); seg.push(len); } const reps = Math.max(1, Math.round(len / 256));
     for (let i = 0; i <= n; i++) { const p = t.pts[i % n], nm = t.nrm[i % n], hw = TW / 2, v = (seg[i] / len) * reps; pos.push((p.x - nm.x * hw) * S, 0, (p.y - nm.y * hw) * S, (p.x + nm.x * hw) * S, 0, (p.y + nm.y * hw) * S); uv.push(0, v, 1, v); nor.push(0, 1, 0, 0, 1, 0); if (i < n) { const k = i * 2; idx.push(k, k + 1, k + 2, k + 1, k + 3, k + 2); } }
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx);
-    this.road = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ map: tex, roughness: .88, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 })); this.road.position.y = 0; this.scene.add(this.road); this.roadPeriod = 0;
+    this.road = new THREE.Mesh(g, this.roadMat(tex, { side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 })); this.road.receiveShadow = true; this.road.position.y = 0; this.scene.add(this.road); this.roadPeriod = 0;
     // props along the track, kept clear of every part of the road
     const r = rng(c.seed * 31 + 7); this.props.begin(); const placed: { x: number; y: number; e: number }[] = [];
     for (let i = 0; i < n; i += 3) for (const side of [-1, 1]) {
@@ -147,8 +186,11 @@ export class Renderer3D {
     { const cs = f.coins ?? [], tt = this.t; for (let i = 0; i < this.coins.length; i++) { const m = this.coins[i], c = cs[i]; if (!c) { m.visible = false; continue; } m.visible = true; m.position.set(c.x * S, 1 + .12 * Math.sin(tt * 4 + i), c.y * S); m.rotation.y = tt * 3 + i; } }
     // world follows the car
     const snap = (v: number, q: number) => Math.round(v / q) * q; this.ground.position.set(snap(px, 8), -.02, snap(pz, 8));
-    if (this.mode === 'endless') { const zz = snap(pz, this.roadPeriod); this.road!.position.set(0, 0, zz); this.rails!.position.set(0, 0, zz); const pk = Math.floor(-f.py / E_CHUNK); if (pk !== this.pk) { this.pk = pk; this.rebuildEndlessProps(pk); } }
-    this.sun.position.set(px - 40, 70, pz - 30); this.sun.target.position.set(px, 0, pz);
+    if (this.mode === 'endless') { const zz = snap(pz, this.roadPeriod); this.road!.position.set(0, .012, zz); this.rails!.position.set(0, 0, zz); const pk = Math.floor(-f.py / E_CHUNK); if (pk !== this.pk) { this.pk = pk; this.rebuildEndlessProps(pk); } }
+    { const q = this.quality(); if (q !== this.q) this.applyQuality(q);
+      const d = SUN_DIR, e = this.q === 'high' ? 46 : 40, tex = (2 * e) / this.sun.shadow.mapSize.x, right = this.lr.crossVectors(this.lu.set(0, 1, 0), d).normalize(), up = this.lu.crossVectors(d, right).normalize(), t = this.lt.set(px, 0, pz), a = t.dot(right), b = t.dot(up);
+      t.addScaledVector(right, Math.round(a / tex) * tex - a).addScaledVector(up, Math.round(b / tex) * tex - b);             // snap to the shadow-map texel grid: shadows never shimmer while you drive
+      this.sun.target.position.copy(t); this.sun.position.copy(t).addScaledVector(d, 120); this.sun.target.updateMatrixWorld(); if (this.hills) this.hills.position.set(px, 0, pz); }
     // camera: close behind the car, follows its travel direction a little so slides show; FOV widens with speed
     const sp = Math.hypot(f.vx, f.vy) * S; let tgt = f.heading; if (sp > 3) tgt = f.heading + wrap(Math.atan2(f.vy, f.vx) - f.heading) * .32;
     if (this.snapCam) { this.snapCam = false; this.camYaw = f.heading; }
@@ -159,7 +201,7 @@ export class Renderer3D {
     this.fx.update(dt);
     if (this.rain) { const p = this.rain.geometry.attributes.position as THREE.BufferAttribute, a = p.array as Float32Array, cx = this.camPos.x, cz = this.camPos.z, fall = 26 * dt;
       for (let i = 0; i < this.rainN; i++) { const o = i * 6; a[o + 1] -= fall; a[o + 4] -= fall; a[o] -= dt * 2; a[o + 3] -= dt * 2; if (a[o + 1] < 0 || Math.abs(a[o] - cx) > 30 || Math.abs(a[o + 2] - cz) > 30) { const x = cx + (Math.random() - .5) * 60, y = 8 + Math.random() * 14, z = cz + (Math.random() - .5) * 60; a[o] = x; a[o + 1] = y; a[o + 2] = z; a[o + 3] = x - .05; a[o + 4] = y + 1.1; a[o + 5] = z; } } p.needsUpdate = true; }
-    this.r.render(this.scene, this.cam);
+    if (this.composer && this.q === 'high') { if (this.grade) this.grade.uniforms.uSpeed.value += (Math.min(1, f.ratio) - this.grade.uniforms.uSpeed.value) * Math.min(1, dt * 4); this.composer.render(dt); } else this.r.render(this.scene, this.cam);
   }
-  dispose() { this.ro.disconnect(); window.removeEventListener('resize', this.onResize); if (!this.ok) return; this.game.scale.off('resize', this.onResize); this.r.dispose(); this.r.forceContextLoss(); this.r.domElement.remove(); }
+  dispose() { this.killComposer(); this.ro.disconnect(); window.removeEventListener('resize', this.onResize); if (!this.ok) return; this.game.scale.off('resize', this.onResize); this.r.dispose(); this.r.forceContextLoss(); this.r.domElement.remove(); }
 }

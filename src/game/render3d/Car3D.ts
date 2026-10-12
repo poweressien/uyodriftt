@@ -104,7 +104,7 @@ const sharedMat = (cat: Cat): THREE.Material => {
     case 'trim': m = new THREE.MeshStandardMaterial({ color: 0x111213, roughness: .65, metalness: .1 }); break;
     case 'tire': m = new THREE.MeshStandardMaterial({ color: 0x0b0b0b, roughness: .92 }); break;
     case 'chrome': m = new THREE.MeshStandardMaterial({ color: 0xd3d8db, metalness: 1, roughness: .14 }); break;
-    case 'head': m = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff2c4, emissiveIntensity: 1.8, roughness: .2 }); break;
+    case 'head': m = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff2c4, emissiveIntensity: 2.6, roughness: .2 }); break;
     case 'tail': m = new THREE.MeshStandardMaterial({ color: 0x7a0b07, emissive: 0xff1a10, emissiveIntensity: 1.2, roughness: .3 }); break;
     case 'plate': m = new THREE.MeshStandardMaterial({ color: 0xf1f1ea, roughness: .5 }); break;
     case 'stripe': m = new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: .3, clearcoat: 1, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }); break;
@@ -146,14 +146,14 @@ export class Car3D {
     const g = compiled(k, dynamic);
     g.forEach((geo, cat) => {
       const m = cat === 'paint' ? this.paint : cat === 'tail' ? this.brake : cat === 'glass' ? this.glassMat(look.glass) : sharedMat(cat);
-      const mesh = new THREE.Mesh(geo, m); mesh.matrixAutoUpdate = false; this.chassis.add(mesh);
+      const mesh = new THREE.Mesh(geo, m); mesh.matrixAutoUpdate = false; mesh.castShadow = cat !== 'glass'; mesh.receiveShadow = cat === 'paint' || cat === 'trim'; this.chassis.add(mesh);
     });
     if (look.decal === 'danfo' && (k === 'minibus' || k === 'bus')) for (const z of [-1, 1]) { const b = new THREE.Mesh(new THREE.BoxGeometry(c.halfL * 2 - .5, .24, .03), sharedMat('trim')); b.position.set(0, c.belt - .18, z * (c.width / 2 + .014)); this.chassis.add(b); }
     if (look.decal === 'stripes') for (const z of [-.13, .13]) this.chassis.add(this.stripe(c, z));
     const tex = look.decal ? decalTexture(look.decal) : null;
     if (tex) for (const z of [-1, 1]) { const p = new THREE.Mesh(new THREE.PlaneGeometry(c.halfL * 1.1, (c.belt - c.clear) * .75), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })); p.position.set(.1, (c.belt + c.clear) / 2, z * (c.width / 2 + .004)); p.rotation.y = z < 0 ? Math.PI : 0; p.scale.x = z < 0 ? -1 : 1; this.chassis.add(p); }
     if (dynamic) this.buildWheels(c, look.wheel ?? 0xd8dcde);
-    const sh = new THREE.Mesh(new THREE.PlaneGeometry(this.dims.length * 1.32, c.width * 1.7), new THREE.MeshBasicMaterial({ map: blobShadow(), transparent: true, depthWrite: false })); sh.rotation.x = -Math.PI / 2; sh.position.y = .03; sh.renderOrder = 1; this.shadow = sh;
+    const sh = new THREE.Mesh(new THREE.PlaneGeometry(this.dims.length * 1.32, c.width * 1.7), new THREE.MeshBasicMaterial({ map: blobShadow(), transparent: true, depthWrite: false })); sh.rotation.x = -Math.PI / 2; sh.position.y = .03; sh.renderOrder = 1; (sh.material as THREE.MeshBasicMaterial).opacity = .55; this.shadow = sh;
     this.root.add(sh, this.chassis);
   }
   private glassMat(tint = .7) { const m = (sharedMat('glass') as THREE.MeshPhysicalMaterial).clone(); m.color.setScalar(.04 + (1 - tint) * .3).lerp(new THREE.Color(0x0a1a26), .5); return m; }
@@ -167,14 +167,14 @@ export class Car3D {
     const hub = new THREE.CylinderGeometry(c.wr * .17, c.wr * .17, .3, 10), hubMat = new THREE.MeshStandardMaterial({ color: 0x151515 });
     for (const sp of wheelSpots(this.look.kind, c)) { const wx = sp.x, front = sp.front, side = sp.z;
       const pivot = new THREE.Group(), spin = new THREE.Group(); pivot.position.set(wx, c.wr, side * (c.width / 2 - (this.look.kind === 'keke' ? .12 : .17))); pivot.add(spin);
-      for (const [geo, m] of [[tire, sharedMat('tire')], [rimGeo, rimMat], [disc, discMat], [hub, hubMat]] as const) { const me = new THREE.Mesh(geo, m); me.rotation.x = Math.PI / 2; spin.add(me); }
+      for (const [geo, m] of [[tire, sharedMat('tire')], [rimGeo, rimMat], [disc, discMat], [hub, hubMat]] as const) { const me = new THREE.Mesh(geo, m); me.castShadow = true; me.rotation.x = Math.PI / 2; spin.add(me); }
       this.chassis.add(pivot); this.wheels.push({ pivot, spin, front, side });
     }
   }
   setColor(c: number) { this.look.color = c; this.base.set(c); this.paint.color.copy(this.base); }
   /** damage 0..1 darkens and dulls the paint. */
   setDamage(d: number) { const k = 1 - .45 * Math.min(1, d); this.paint.color.copy(this.base).multiplyScalar(k); this.paint.roughness = .26 + .3 * Math.min(1, d); }
-  setBrake(on: boolean) { this.brake.emissiveIntensity = on ? 4 : 1.1; }
+  setBrake(on: boolean) { this.brake.emissiveIntensity = on ? 6 : 1.3; }
   /** Pose in world metres. heading in game radians (clockwise on screen); steer = front wheel angle; ax/ay in m/s^2 for pitch/roll; wheelRate in rad/s. */
   place(x: number, z: number, heading: number, dt = 0, o: { steer?: number; ax?: number; ay?: number; wheelRate?: number; lift?: number; spinY?: number } = {}) {
     this.root.position.set(x, 0, z); this.root.rotation.y = -heading;

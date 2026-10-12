@@ -104,3 +104,27 @@ Things to know:
 - **Google Play rule:** Play requires Google Play Billing for in-game items sold in apps on the Play Store. Paystack is fine on the web and for APKs you share yourself, but a Play Store release with Paystack for coins, gas and cars can be rejected or removed. Check Play's current payments policy for Nigeria before you publish.
 - Rewarded ads in the app use AdMob; keep `VITE_ADMOB_TEST=1` until your AdMob account and app are approved, and never tap your own live ads.
 - No APK is included in the zip: this build environment has no Android SDK and cannot reach Google's build servers, so the APK is built by the GitHub workflow or on your machine.
+
+**If `npm install` fails on Windows** (ECONNRESET, EPERM): it is your connection or antivirus, not the project. Close VS Code and any running `npm run dev`, delete the `node_modules` folder, then run `npm install --no-audit --no-fund --fetch-retries=5 --fetch-retry-mintimeout=20000`. If it still resets, switch network (or use mobile data) and run it again; npm resumes from its cache. The icon generator is no longer a dependency, so the install is smaller than before.
+
+## v4.6 - gearbox, drift button, tilt, realism
+- **Real gearbox.** 6 gears with real rpm (idle to redline), launch clutch slip, lugging in a tall gear, rev limiter and engine braking by gear. Automatic by default (kicks down when you floor it). Touch: GEAR - / GEAR + buttons and a tap-to-switch AUTO/MAN readout with a rev bar. Pressing a gear button switches to manual. Keyboard: E up, Q down, G auto/manual. Pause menu has a Gearbox toggle too.
+- **Drift button fixed.** The button is latched for 0.34 s on touch-down, so a quick tap always registers (it used to be polled once per frame and short taps were lost). The handbrake now kicks the tail out in the steering direction, keeps your speed, and releases the rears at ~20 degrees of slip so the slide is held at 30-50 degrees and never becomes a spin.
+- **Tilt re-balanced.** Soft in the middle, firm at the edges, perfectly symmetric left/right, speed-sensitive (needs more tilt for the same lock at high speed), smaller dead zone, tuned flick lead.
+- **Realism.** Tyre load sensitivity (grip per newton falls as weight shifts onto a tyre), gear-aware engine braking, torque curve over real rpm, locked-rear handbrake that does not kill speed under throttle.
+
+## v4.7 - graphics
+- **Graphics setting** (Settings > Graphics, or Pause menu): High / Medium / Low, applies live. Phones default to Medium, computers to High.
+  - High: real sun shadows (2048 map, soft edges), bloom on headlights, brake lights and street lamps, speed-driven radial blur and colour fringing, vignette, 4x MSAA.
+  - Medium: real sun shadows (1024 map). Low: no shadows or post effects (fastest).
+- Shadows follow the car and snap to the shadow-map grid, so they never shimmer. Cars, wheels, buildings, palms and lamps cast; road and ground receive.
+- One sun direction for the sky and the shadow light (high over the left shoulder), so the car is well lit and shadows fall ahead and to the right.
+- Road: polished tyre tracks, patched tarmac, cracks, tar seams, oil drips, dust at the edges. In rain the road turns into a wet mirror.
+- Horizon: two rings of distant hills and a tree-line with haze baked in. Trees and shrubs are smooth-shaded spheres instead of faceted blobs.
+- Lamps glow at night (bloom), headlight and brake light emissive values raised.
+
+## v4.8 — sharp tilt steering
+- Full lock now needs only 6° / 9° / 14° of tilt (Sharp / Normal / Soft); it was 10 / 15 / 22 plus up to +35% at speed. Speed scaling is now just +8%.
+- Response curve is direct from the first degree (dead zone 0.5°), stronger flick lead.
+- Faster filter (less lag), faster analog smoothing, faster front-wheel response, and ~30% more usable lock at speed.
+- Tip: pick **Sharp** in Settings for the most bite. Tap the tilt box to re-centre at any time.

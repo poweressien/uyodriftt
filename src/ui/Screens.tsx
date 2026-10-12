@@ -4,7 +4,7 @@ import { DISTRICTS } from '../game/data/districts';
 import { VEHICLES } from '../game/data/vehicles';
 import { watchAd } from '../monetize/watch';
 import { adsAvailable } from '../monetize/ads';
-import { VIEWS, VIEW_LABEL } from '../game/data/settings';
+import { VIEWS, VIEW_LABEL, GFX_LABEL } from '../game/data/settings';
 import { requestTilt, hasTilt, TILT_LABEL } from '../game/systems/Controls';
 import { useSave, setSettings, resetSave, missionView, claimMission, achievementView, topRuns, districtName, Period } from '../state/store';
 import { Header, Coins } from './Bits';
@@ -69,6 +69,7 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
         {!coarse && <div className="muted" style={{ marginTop: 6 }}>Desktop uses the keyboard. Add ?touch=1 to the address to preview touch controls.</div>}
         <label className="aud-cap"><input type="checkbox" checked={st.haptics} onChange={e => setSettings({ haptics: e.target.checked })} /> Vibrate on crashes (phones)</label>
       </Card>
+      <Card label="Graphics" hint="High: real shadows, glow and speed effects. Medium: shadows. Low: fastest on older phones. Applies live."><div className="chips left">{(['high', 'medium', 'low'] as const).map(q => <button key={q} className={`chip${st.gfx === q ? ' on' : ''}`} onClick={() => setSettings({ gfx: q })}>{GFX_LABEL[q]}</button>)}</div></Card>
       <Card label="Camera view" hint="Switch any time in a run with the CAM button or the C key. On touch screens every view turns with the car so left and right always match."><div className="chips left">{VIEWS.map(v => <button key={v} className={`chip${st.view === v ? ' on' : ''}`} onClick={() => setSettings({ view: v })}>{VIEW_LABEL[v]}</button>)}</div></Card></>}
       {tab === "profile" && <><Card label="Your name" hint="Shown to friends in multiplayer and on challenge links."><input className="txt" maxLength={14} placeholder="Driver" value={st.name} onChange={e => setSettings({ name: e.target.value })} /></Card>
       <Card label="Saved data" hint="Progress is stored on this device only."><button className="btn danger sm" onClick={() => confirm('Erase all progress on this device? This cannot be undone.') && resetSave()}>Reset progress</button></Card></>}

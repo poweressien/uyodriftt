@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { getSave, subscribe } from '../../state/store';
+import { getSave, subscribe, setSettings } from '../../state/store';
 import { requestTilt } from '../systems/Controls';
 import { MAX_CRASHES, isRace, type Mode } from '../data/settings';
 import { adsAvailable } from '../../monetize/ads';
@@ -61,32 +61,48 @@ export class HUDScene extends Phaser.Scene {
       };
       ev.on('race', onRace); this.events.once('shutdown', () => ev.off('race', onRace));
     }
-    // ---- touch controls: steering arrows OR tilt, plus brake + drift. Throttle is automatic.
+    // ---- touch controls: steering arrows OR tilt, plus brake + drift + gear buttons. Throttle is automatic.
     // Buttons are read from every finger each frame (rectangle hit-test), so you can slide from < to > without lifting and use two thumbs freely.
+    // DRIFT is latched for a third of a second after the finger lands, so even a quick tap throws the tail out.
+    const gearOf = () => ((window as any).__car ?? { gear: 1, rpm: .2, man: false, lim: false }) as { gear: number; rpm: number; man: boolean; lim: boolean };
     if (touchMode) {
-      this.input.addPointer(3); const st = this.registry.get('touch') as Record<string, boolean>, bottom = H - 80, S = 120;
-      type B = { key: string; x: number; label: string; size: number; r: Phaser.GameObjects.Graphics; on: boolean };
-      const drawB = (b: B, down: boolean) => { const p = chamfer(b.x - S / 2, bottom - S / 2, S, S, 18); b.on = down; b.r.clear().fillStyle(down ? ACC : PAN, down ? .85 : .55).fillPoints(p, true).lineStyle(3, ACC, .95).strokePoints(p, true); };
-      const mk = (x: number, label: string, key: string, size = 50): B => { const b: B = { key, x, label, size, r: this.add.graphics().setDepth(5), on: false }; drawB(b, false); T(x, bottom, label, size, '#fff', NUM, .5, .5).setDepth(6); return b; };
-      const btns = [mk(86, '<', 'left'), mk(224, '>', 'right'), mk(W - 226, 'BRAKE', 'brake', 18), mk(W - 86, 'DRIFT', 'hand', 18)];
+      this.input.addPointer(3); const st = this.registry.get('touch') as Record<string, boolean>, bottom = H - 80, S = 120, gy = H - 190;
+      type B = { key: string; x: number; y: number; w: number; h: number; m: number; r: Phaser.GameObjects.Graphics; on: boolean };
+      const drawB = (b: B, down: boolean) => { const p = chamfer(b.x - b.w / 2, b.y - b.h / 2, b.w, b.h, b.h > 90 ? 18 : 12); b.on = down; b.r.clear().fillStyle(down ? ACC : PAN, down ? .85 : .55).fillPoints(p, true).lineStyle(3, ACC, .95).strokePoints(p, true); };
+      const mk = (x: number, label: string, key: string, size = 50, y = bottom, w = S, h = S, m = 14): B => { const b: B = { key, x, y, w, h, m, r: this.add.graphics().setDepth(5), on: false }; drawB(b, false); T(x, y, label, size, '#fff', NUM, .5, .5).setDepth(6); return b; };
+      const btns = [mk(86, '<', 'left'), mk(224, '>', 'right'), mk(W - 226, 'BRAKE', 'brake', 18), mk(W - 86, 'DRIFT', 'hand', 18), mk(W - 226, 'GEAR -', 'gdn', 16, gy, 72, 64, 6), mk(W - 86, 'GEAR +', 'gup', 16, gy, 72, 64, 6)];
       const tiltBox = this.add.rectangle(155, bottom, 276, S, PAN, .5).setStrokeStyle(3, 0x3ff2d0, .9).setInteractive().setDepth(5), tiltTxt = T(155, bottom - 12, 'TILT TO STEER', 16, GR, NUM, .5, .5).setDepth(6), tiltSub = T(155, bottom + 22, 'tap to re-centre', 16, '#ffffffcc', UI, .5, .5).setDepth(6);
       tiltBox.on('pointerup', () => { ev.emit('tilt-cal'); toast('RE-CENTRED', GR); });
       const bar = this.add.rectangle(155, bottom + 46, 6, 8, 0x3ff2d0).setDepth(6);
       const applyCtl = () => { const t = cfg().controls === 'tilt'; btns.slice(0, 2).forEach(b => { b.r.setVisible(!t); }); [tiltBox, tiltTxt, tiltSub, bar].forEach(o => o.setVisible(t)); this.children.list.forEach(o => { if (o instanceof Phaser.GameObjects.Text && (o.text === '<' || o.text === '>')) o.setVisible(!t); }); };
       applyCtl(); const unsub = subscribe(applyCtl);
-      const hit = (b: B, x: number, y: number) => Math.abs(x - b.x) <= S / 2 + 14 && Math.abs(y - bottom) <= S / 2 + 18;
+      const hit = (b: B, x: number, y: number) => Math.abs(x - b.x) <= b.w / 2 + b.m && Math.abs(y - b.y) <= b.h / 2 + b.m;
+      // a tap that lands and lifts between two frames must still count: pointerdown latches the button for a few frames
+      const latch: Record<string, number> = { hand: 0, gup: 0, gdn: 0 }, hold: Record<string, number> = { hand: .34, gup: .16, gdn: .16 };
+      const onDown = (p: Phaser.Input.Pointer) => { for (const b of btns) if (b.key in latch && hit(b, p.x, p.y)) latch[b.key] = hold[b.key]; };
+      this.input.on('pointerdown', onDown);
       const poll = () => {
-        const down: Record<string, boolean> = { left: false, right: false, brake: false, hand: false }, tiltMode = cfg().controls === 'tilt';
+        const down: Record<string, boolean> = { left: false, right: false, brake: false, hand: false, gup: false, gdn: false }, tiltMode = cfg().controls === 'tilt';
         for (const p of this.input.manager.pointers) if (p.isDown) for (const b of btns) { if (tiltMode && (b.key === 'left' || b.key === 'right')) continue; if (hit(b, p.x, p.y)) down[b.key] = true; }
-        for (const b of btns) { st[b.key] = down[b.key]; if (b.on !== down[b.key]) drawB(b, down[b.key]); }
+        const dtp = this.game.loop.delta / 1000; for (const k in latch) latch[k] = Math.max(0, latch[k] - dtp);
+        for (const b of btns) { st[b.key] = b.key in latch ? down[b.key] || latch[b.key] > 0 : down[b.key]; if (b.on !== down[b.key]) drawB(b, down[b.key]); }
         if (tiltMode) { const v = ((window as any).__tiltValue as number) ?? 0; bar.x = 155 + v * 110; }
       };
-      this.events.on('update', poll); this.events.once('shutdown', () => { this.events.off('update', poll); unsub(); st.left = st.right = st.brake = st.hand = false; });
+      this.events.on('update', poll); this.events.once('shutdown', () => { this.events.off('update', poll); this.input.off('pointerdown', onDown); unsub(); st.left = st.right = st.brake = st.hand = st.gup = st.gdn = false; });
+    }
+    // ---- gear readout + rev bar (touch and keyboard): tap the number to switch between AUTO and MANUAL
+    {
+      const gx = touchMode ? W - 156 : W - 96, gyy = touchMode ? H - 190 : H - 70;
+      const gBg = this.add.rectangle(gx, gyy, 58, 70, PAN, .55).setStrokeStyle(2, ACC, .8).setDepth(5).setInteractive({ useHandCursor: true }), gTxt = T(gx, gyy - 10, '1', 34, '#fff', NUM, .5, .5).setDepth(6), gSub = T(gx, gyy + 16, 'AUTO', 13, '#ffffffcc', UI, .5, .5).setDepth(6), gBar = this.add.graphics().setDepth(6);
+      gBg.on('pointerup', () => { const m = cfg().gearbox === 'manual' ? 'auto' : 'manual'; setSettings({ gearbox: m }); toast(m === 'manual' ? 'MANUAL GEARBOX' : 'AUTOMATIC GEARBOX', GR); });
+      const upd = () => { const c = gearOf(), g = c.gear < 0 ? 'R' : String(c.gear); if (gTxt.text !== g) gTxt.setText(g); const lab = c.man ? 'MAN' : 'AUTO'; if (gSub.text !== lab) gSub.setText(lab);
+        gTxt.setColor(c.lim ? '#ff5a3c' : c.man ? '#3ff2d0' : '#ffffff'); const r = Math.max(0, Math.min(1, (c.rpm - .2) / .8)), w = 48; gBar.clear().fillStyle(0x000000, .6).fillRect(gx - w / 2, gyy + 28, w, 6).fillStyle(r > .88 ? 0xff3560 : r > .7 ? 0xffd23f : 0x3ff2d0, 1).fillRect(gx - w / 2, gyy + 28, w * r, 6); };
+      this.events.on('update', upd); this.events.once('shutdown', () => this.events.off('update', upd));
     }
     // ---- run cash + live race score
     const cash = T(26, 116, 'COINS +0', 20, '#ffd23f'), mpTxt = T(W / 2, 68, '', 22, '#fff', UI, .5, .5).setAlpha(0);
     const onCoin = (n: number) => { set(cash, `COINS +${n.toLocaleString()}`); this.tweens.killTweensOf(cash); cash.setScale(1.25); this.tweens.add({ targets: cash, scale: 1, duration: 220 }); };
-    const hint = (i: { district: string; weather: string; car: string; touchMode: boolean }) => `${i.district.toUpperCase()}  ·  ${i.weather.toUpperCase()}  ·  ${i.car.toUpperCase()}${i.touchMode ? '' : `\nW/S gas-brake  ·  A/D steer  ·  SPACE handbrake = DRIFT  ·  C camera  ·  H horn  ·  ESC pause${race ? '\nRam rivals to wreck them. Your car has hit points.' : endless ? '\nHit 5 cars and it is game over' : ''}`}`;
+    const hint = (i: { district: string; weather: string; car: string; touchMode: boolean }) => `${i.district.toUpperCase()}  ·  ${i.weather.toUpperCase()}  ·  ${i.car.toUpperCase()}${i.touchMode ? '' : `\nW/S gas-brake  ·  A/D steer  ·  SPACE = DRIFT  ·  E/Q shift  ·  G auto/manual  ·  C camera  ·  H horn  ·  ESC pause${race ? '\nRam rivals to wreck them. Your car has hit points.' : endless ? '\nHit 5 cars and it is game over' : ''}`}`;
     const onInfo = (i: { district: string; weather: string; car: string; touchMode: boolean }) => { set(info, hint(i)); this.tweens.add({ targets: info, alpha: 1, duration: 300, hold: 4200, yoyo: true }); };
     let lastLive = 0, lastLiveT = 0;
     const onStats = (s: any) => {

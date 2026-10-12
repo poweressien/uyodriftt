@@ -6,7 +6,7 @@ export class BootScene extends Phaser.Scene {
   create() {
     makeTextures(this); const r3d = new Renderer3D(this.game); this.registry.set('r3d', r3d); this.game.events.once('destroy', () => r3d.dispose());
     const run = this.registry.get('runConfig');
-    this.registry.set('touch', { left: false, right: false, brake: false, hand: false });
+    this.registry.set('touch', { left: false, right: false, brake: false, hand: false, gup: false, gdn: false });
     this.registry.set('touchMode', (typeof matchMedia !== 'undefined' && matchMedia('(pointer:coarse)').matches) || /[?&]touch=1/.test(location.search));
     this.scene.start(run?.mode && run.mode !== 'drift' ? 'Endless' : 'Drive', run);
   }
