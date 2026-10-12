@@ -6,7 +6,7 @@ on:
     branches: [main, master]
 jobs:
   apk:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04      # pinned: the Android SDK + licences come preinstalled on this image
     env:
       # Public build settings. Add them in GitHub > Settings > Secrets and variables > Actions > Variables (all optional for a test build).
       VITE_ADS_MODE: ${{ vars.VITE_ADS_MODE }}
@@ -23,7 +23,8 @@ jobs:
         with: { node-version: 22, cache: npm }
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: 21 }
-      - uses: android-actions/setup-android@v3
+      - name: Accept Android SDK licences (SDK is preinstalled on the runner)
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
       - run: npm ci
       - run: npm run build
       - run: npx cap sync android
