@@ -1,0 +1,19 @@
+{
+	"appId": "ng.uyodrift.game",
+	"appName": "Uyo Drift",
+	"webDir": "dist",
+	"backgroundColor": "#05070d",
+	"android": {
+		"allowMixedContent": false,
+		"backgroundColor": "#05070d"
+	},
+	"server": {
+		"androidScheme": "https"
+	},
+	"plugins": {
+		"StatusBar": {
+			"overlaysWebView": true,
+			"style": "DARK"
+		}
+	}
+}
